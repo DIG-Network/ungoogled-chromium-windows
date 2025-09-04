@@ -1,0 +1,231 @@
+# Add support for dig:// protocol with welcome page
+# This patch adds a custom protocol handler for dig:// URLs that displays a welcome page
+
+--- a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
++++ b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
+@@ -72,6 +72,7 @@ ChromeAutocompleteSchemeClassifier::GetI
+   if (base::IsStringASCII(scheme) &&
+       (ProfileIOData::IsHandledProtocol(scheme) ||
+        base::EqualsCaseInsensitiveASCII(scheme, content::kViewSourceScheme) ||
++       base::EqualsCaseInsensitiveASCII(scheme, url::kDigScheme) ||
+        base::EqualsCaseInsensitiveASCII(scheme, url::kJavaScriptScheme) ||
+        base::EqualsCaseInsensitiveASCII(scheme, url::kDataScheme))) {
+     return metrics::OmniboxInputType::URL;
+--- a/chrome/browser/history/history_utils.cc
++++ b/chrome/browser/history/history_utils.cc
+@@ -22,6 +22,7 @@ bool CanAddURLToHistory(const GURL& url)
+       url.SchemeIs(content::kChromeUIScheme) ||
+       url.SchemeIs(content::kChromeUIUntrustedScheme) ||
+       url.SchemeIs(content::kViewSourceScheme) ||
++      url.SchemeIs(url::kDigScheme) ||
+       url.SchemeIs(chrome::kChromeNativeScheme) ||
+       url.SchemeIs(chrome::kChromeSearchScheme) ||
+       url.SchemeIs(dom_distiller::kDomDistillerScheme))
+--- a/chrome/browser/ui/singleton_tabs.cc
++++ b/chrome/browser/ui/singleton_tabs.cc
+@@ -132,7 +132,8 @@ int GetIndexOfExistingTab(Browser* brows
+     // RewriteURLIfNecessary removes the "view-source:" scheme which could lead
+     // to incorrect matching, so ensure that the target and the candidate are
+     // either both view-source:, or neither is.
+-    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source) {
++    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
++        tab_url.SchemeIs(url::kDigScheme)) {
+       continue;
+     }
+ 
+--- a/components/omnibox/browser/autocomplete_input.cc
++++ b/components/omnibox/browser/autocomplete_input.cc
+@@ -578,7 +578,8 @@ void AutocompleteInput::ParseForEmphasiz
+   // For the view-source and blob schemes, we should emphasize the host of the
+   // URL qualified by the view-source or blob prefix.
+   if ((base::EqualsCaseInsensitiveASCII(scheme_str, kViewSourceScheme) ||
+-       base::EqualsCaseInsensitiveASCII(scheme_str, url::kBlobScheme)) &&
++       base::EqualsCaseInsensitiveASCII(scheme_str, url::kBlobScheme) ||
++       base::EqualsCaseInsensitiveASCII(scheme_str, url::kDigScheme)) &&
+       (static_cast<int>(text.length()) > after_scheme_and_colon)) {
+     // Obtain the URL prefixed by view-source or blob and parse it.
+     std::u16string real_url(text.substr(after_scheme_and_colon));
+--- a/components/url_formatter/url_fixer.cc
++++ b/components/url_formatter/url_fixer.cc
+@@ -602,6 +602,10 @@ GURL FixupURLInternal(const std::string&
+     }
+   }
+ 
++  if (scheme == url::kDigScheme) {
++    return GURL(text);
++  }
++
+   // We handle the file scheme separately.
+   if (scheme == url::kFileScheme) {
+     return GURL(parts.scheme.is_valid() ? text : FixupPath(text));
+--- a/content/browser/child_process_security_policy_impl.cc
++++ b/content/browser/child_process_security_policy_impl.cc
+@@ -938,6 +938,7 @@ ChildProcessSecurityPolicyImpl::ChildPro
+   RegisterWebSafeScheme(url::kWssScheme);
+ #endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
+   RegisterWebSafeScheme(url::kDataScheme);
++  RegisterWebSafeScheme(url::kDigScheme);
+ 
+   // TODO(nick): https://crbug.com/651534 blob: and filesystem: schemes embed
+   // other origins, so we should not treat them as web safe. Remove callers of
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -1108,6 +1108,8 @@ component("net") {
+     "url_request/static_http_user_agent_settings.cc",
+     "url_request/static_http_user_agent_settings.h",
+     "url_request/storage_access_status_cache.h",
++    "url_request/dig_protocol_handler.cc",
++    "url_request/dig_protocol_handler.h",
+     "url_request/url_request.cc",
+     "url_request/url_request.h",
+     "url_request/url_request_context.cc",
+--- /dev/null
++++ b/net/url_request/dig_protocol_handler.cc
+@@ -0,0 +1,53 @@
++// Copyright (c) 2024 The ungoogled-chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "net/url_request/dig_protocol_handler.h"
++
++#include "base/logging.h"
++#include "base/strings/string_piece.h"
++#include "net/base/net_errors.h"
++#include "net/url_request/url_request_simple_job.h"
++
++namespace net {
++
++namespace {
++
++class DigProtocolJob : public URLRequestSimpleJob {
++ public:
++  DigProtocolJob(URLRequest* request) : URLRequestSimpleJob(request) {}
++  
++  DigProtocolJob(const DigProtocolJob&) = delete;
++  DigProtocolJob& operator=(const DigProtocolJob&) = delete;
++
++  int GetData(std::string* mime_type,
++              std::string* charset,
++              std::string* data,
++              CompletionOnceCallback callback) const override {
++    *mime_type = "text/html";
++    *charset = "utf-8";
++    *data = R"(
++<!DOCTYPE html>
++<html>
++<head>
++    <title>Welcome to the DIG Network</title>
++    <meta charset="utf-8">
++    <style>
++        body { font-family: Arial, sans-serif; text-align: center; margin: 50px; }
++        h1 { color: #2e7d32; font-size: 3em; }
++        p { font-size: 1.2em; color: #555; }
++    </style>
++</head>
++<body>
++    <h1>Welcome to the DIG Network</h1>
++    <p>You have successfully accessed a dig:// URL!</p>
++    <p>This is a custom protocol handler for the DIG Network.</p>
++</body>
++</html>
++)";
++    return OK;
++  }
++};
++
++}  // namespace
++
++DigProtocolHandler::DigProtocolHandler() = default;
++
++std::unique_ptr<URLRequestJob> DigProtocolHandler::CreateJob(
++    URLRequest* request) const {
++  return std::make_unique<DigProtocolJob>(request);
++}
++
++bool DigProtocolHandler::IsSafeRedirectTarget(const GURL& location) const {
++  return true;
++}
++
++}  // namespace net
+--- /dev/null
++++ b/net/url_request/dig_protocol_handler.h
+@@ -0,0 +1,30 @@
++// Copyright (c) 2024 The ungoogled-chromium Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef NET_URL_REQUEST_DIG_PROTOCOL_HANDLER_H_
++#define NET_URL_REQUEST_DIG_PROTOCOL_HANDLER_H_
++
++#include "base/compiler_specific.h"
++#include "net/base/net_export.h"
++#include "net/url_request/url_request_job_factory.h"
++
++namespace net {
++
++class URLRequestJob;
++
++// Implements a ProtocolHandler for DIG Network URLs.
++class NET_EXPORT DigProtocolHandler
++    : public URLRequestJobFactory::ProtocolHandler {
++ public:
++  DigProtocolHandler();
++  DigProtocolHandler(const DigProtocolHandler&) = delete;
++  DigProtocolHandler& operator=(const DigProtocolHandler&) = delete;
++  std::unique_ptr<URLRequestJob> CreateJob(
++      URLRequest* request) const override;
++  bool IsSafeRedirectTarget(const GURL& location) const override;
++};
++
++}  // namespace net
++
++#endif  // NET_URL_REQUEST_DIG_PROTOCOL_HANDLER_H_
+--- a/net/url_request/url_request_context_builder.cc
++++ b/net/url_request/url_request_context_builder.cc
+@@ -53,6 +53,7 @@
+ #include "net/socket/network_binding_client_socket_factory.h"
+ #include "net/ssl/ssl_config_service_defaults.h"
+ #include "net/url_request/static_http_user_agent_settings.h"
++#include "net/url_request/dig_protocol_handler.h"
+ #include "net/url_request/url_request_context.h"
+ #include "net/url_request/url_request_job_factory.h"
+ #include "url/url_constants.h"
+@@ -612,6 +613,9 @@ std::unique_ptr<URLRequestContext> URLRe
+   }
+   protocol_handlers_.clear();
+ 
++  job_factory->SetProtocolHandler(url::kDigScheme,
++                                  std::make_unique<DigProtocolHandler>());
++
+   context->set_job_factory(std::move(job_factory));
+ 
+   if (cookie_deprecation_label_.has_value()) {
+--- a/url/url_constants.h
++++ b/url/url_constants.h
+@@ -50,6 +50,8 @@ inline constexpr char kMaterializedViewS
+ inline constexpr char kSteamScheme[] = "steam";
+ inline constexpr char kTelScheme[] = "tel";
+ inline constexpr char16_t kTelScheme16[] = u"tel";
++inline constexpr char kDigScheme[] = "dig";
++inline constexpr char16_t kDigScheme16[] = u"dig";
+ inline constexpr char kUrnScheme[] = "urn";
+ inline constexpr char16_t kUrnScheme16[] = u"urn";
+ inline constexpr char kUuidInPackageScheme[] = "uuid-in-package";
+--- a/url/url_util.cc
++++ b/url/url_util.cc
+@@ -85,6 +85,7 @@ struct SchemeRegistry {
+       kWssScheme,
+       kDataScheme,
+       kAboutScheme,
++      kDigScheme,
+   };
+ 
+   // Schemes that normal pages cannot link to or access (i.e., with the same
+@@ -99,6 +100,7 @@ struct SchemeRegistry {
+       kAboutScheme,
+       kJavaScriptScheme,
+       kDataScheme,
++      kDigScheme,
+   };
+ 
+   // Schemes that can be sent CORS requests.
