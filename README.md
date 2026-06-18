@@ -1,3 +1,100 @@
+# DIG Browser (Windows)
+
+**DIG Browser** is the DIG Network's privacy-respecting desktop browser: a
+clean, professionally branded build of [ungoogled-chromium](//github.com/Eloston/ungoogled-chromium)
+with **native `dig://` protocol support**. Navigate to a `dig://` address and the
+browser resolves the resource from the DIG content network, **verifies it against
+its on-chain Merkle root, and decrypts it on your device** — the same client-side
+verify/decrypt contract used by the DIG Chrome extension, the DIG Hub, and the
+`digstore` CLI (see the ecosystem `SYSTEM.md`).
+
+It is ungoogled-chromium underneath (no Google services, no telemetry), rebranded
+as a DIG Network product and themed in the DIG brand purple (`#5800D6`).
+
+## What `dig://` does
+
+`dig://` is a first-class URL scheme. You can type any of these into the address
+bar (or link to them from a page):
+
+```
+dig://<storeID>[:<root>]/<resourceKey>           # shorthand
+dig://urn:dig:chia:<storeID>[:<root>]/<resourceKey>
+urn:dig:chia:<storeID>[:<root>]/<resourceKey>     # full URN
+dig://<storeID>/index.html?salt=<hex>             # private store
+```
+
+`<storeID>` and `<root>` are 64-char hex; an empty resource path resolves to
+`index.html`. The optional `?salt=<hex>` is the private-store secret salt.
+
+### How `dig://` → `rpc.dig.net` works (the native read path)
+
+The native handler (`net/url_request/dig_protocol_handler.cc`) mirrors the
+reference extension exactly, but in C++ with BoringSSL instead of the WASM
+crypto module:
+
+1. **Parse the URN** (`dig_urn.cc`) — full form or shorthand, plus `?salt=`.
+2. **Retrieval key** — `retrieval_key = SHA-256(canonical rootless URN)` where the
+   canonical rootless URN is `urn:dig:chia:<storeID>/<resourceKey>`
+   (`dig_crypto.cc`, SYSTEM.md "Retrieval key"). The URN itself is never sent.
+3. **Fetch** — `POST` JSON-RPC 2.0 `dig.getContent` to the configured DIG RPC
+   endpoint (default `https://rpc.dig.net/`), streaming 3 MiB windows and
+   reassembling `{ ciphertext, chunk_lens, inclusion_proof, total_length,
+   complete, next_offset }` (SYSTEM.md "JSON-RPC 2.0 read methods").
+4. **Verify** — recompute the leaf `SHA-256(ciphertext)` and fold the Merkle
+   inclusion proof (`NODE_TAG = "digstore:node:v1"`) up to the trusted root; if
+   the URN pinned a `<root>`, the proof root must equal it (SYSTEM.md "Merkle
+   inclusion proof").
+5. **Decrypt** — derive the per-URN AES-256 key with HKDF-SHA256
+   (salt `SHA-256("digstore-hkdf-salt-v1" [|| secret_salt])`,
+   info `"digstore-aes-256-gcm-key-v1"`, ikm = canonical URN) and decrypt
+   AES-256-GCM-SIV under a fixed nonce, split by `chunk_lens`
+   (SYSTEM.md "AES-256-GCM-SIV + HKDF-SHA256").
+6. **Render** — serve the verified, decrypted bytes with a MIME type derived
+   from the resource extension.
+
+The pipeline is **fail-closed**: a decoy, tampered bytes, a wrong root, or a
+wrong/missing salt fail verification or the GCM-SIV tag and surface a branded
+error page — content is never shown unless it verifies *and* decrypts.
+
+The native crypto (`net/url_request/dig_crypto.cc`) is a byte-for-byte C++ port
+of `digstore-core` (`crypto.rs` / `merkle.rs` / `urn.rs`), so it stays
+byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changing
+the URN scheme, retrieval key, Merkle tags, or HKDF/AES parameters here **must**
+be coordinated with the other modules per `SYSTEM.md`.
+
+## DIG Browser build layout
+
+DIG-specific changes live in two places:
+
+- **`patches/ungoogled-chromium/windows/windows-add-dig-protocol.patch`** — the
+  `dig://` scheme registration + the native RPC/verify/decrypt handler and its
+  crypto/URN helpers (`net/url_request/dig_{protocol_handler,crypto,urn}.{cc,h}`).
+- **`patches/ungoogled-chromium/windows/windows-dig-branding.patch`** — product
+  and company names (DIG Browser / DIG Network) in the channel `BRANDING` file.
+- **`patches/ungoogled-chromium/windows/windows-dig-newtab.patch`** — the brand
+  purple default theme tint and the branded start page wiring.
+- **`dig/branding/`** — the DIG icon set (`product_logo_*.png`, `chrome.ico`)
+  generated from the DIG logo, and **`dig/newtab/dig_newtab.html`** — the polished
+  branded new-tab / start page.
+- **`build.py` → `_apply_dig_branding()`** — overlays the binary brand assets
+  (icons, new-tab page) and the user-visible product strings onto the Chromium
+  tree after patches are applied (binary assets are not practical as text quilt
+  patches).
+
+All three patches are listed at the end of `patches/series` (after the upstream
+ungoogled patches) in apply order.
+
+> **Build-time-verify notes.** The native crypto/RPC C++ and the branding assets
+> are validated independently (the crypto algorithm is covered by an end-to-end
+> round-trip + fail-closed test against the canonical `digstore-core` contract).
+> A few branding surfaces — the exact line anchors of the new-tab HTML resource
+> and the `chromium_strings.grd` message elements — depend on the Chromium
+> milestone and are confirmed during a full source build; the `.grd` strings are
+> applied via a tolerant text substitution in `build.py` rather than line-anchored
+> hunks so they survive rebases.
+
+---
+
 # ungoogled-chromium-windows
 
 Windows packaging for [ungoogled-chromium](//github.com/Eloston/ungoogled-chromium).
