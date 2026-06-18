@@ -1,0 +1,32 @@
+# DIG Browser branding (product/company names).
+#
+# Rebrands the unbranded Chromium product as the "DIG Browser" (a DIG Network
+# product) at its single source of truth: the chromium-channel BRANDING file,
+# which feeds the installer, the About box, Windows shortcuts and VERSIONINFO.
+# Strings only — no behavioural change to the upstream ungoogled-chromium
+# patches. Icons, theme color and the new-tab page are applied by the
+# companion windows-dig-newtab.patch and the build harness
+# (build.py:_apply_dig_branding).
+#
+# The six product/company lines below are the first six lines of the BRANDING
+# file and are stable across Chromium releases, so this hunk applies cleanly.
+# The user-visible IDS_PRODUCT_NAME / IDS_SHORTCUT_NAME /
+# IDS_ABOUT_VERSION_COMPANY_NAME strings in chromium_strings.grd are rebranded
+# by build.py:_apply_dig_branding (a tolerant text substitution that does not
+# depend on exact line numbers), keeping this patch robust across rebases.
+
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,6 +1,6 @@
+-COMPANY_FULLNAME=The Chromium Authors
+-COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
++COMPANY_FULLNAME=DIG Network
++COMPANY_SHORTNAME=DIG Network
++PRODUCT_FULLNAME=DIG Browser
++PRODUCT_SHORTNAME=DIG Browser
++PRODUCT_INSTALLER_FULLNAME=DIG Browser Installer
++PRODUCT_INSTALLER_SHORTNAME=DIG Browser Installer

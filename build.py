@@ -30,6 +30,105 @@ _ROOT_DIR = Path(__file__).resolve().parent
 _PATCH_BIN_RELPATH = Path('third_party/git/usr/bin/patch.exe')
 
 
+def _apply_dig_branding(source_tree):
+    """Overlay the DIG Browser binary brand assets onto the Chromium tree.
+
+    Binary assets (PNG icons, the Windows .ico, the branded new-tab page) are
+    awkward to ship as text quilt patches, so the harness copies them straight
+    over the corresponding Chromium theme/resource files AFTER patches are
+    applied. The accompanying string/theme changes live in the
+    windows-dig-branding.patch / windows-dig-newtab.patch quilt patches; this
+    step only swaps files in place. Idempotent and best-effort: a missing
+    target (e.g. on a Chromium rebase that renamed an icon) is logged and
+    skipped rather than failing the build.
+    """
+    branding_dir = _ROOT_DIR / 'dig' / 'branding'
+    if not branding_dir.exists():
+        get_logger().warning('DIG branding assets not found at %s; skipping', branding_dir)
+        return
+
+    theme = source_tree / 'chrome' / 'app' / 'theme' / 'chromium'
+
+    # Product-logo PNGs used across the UI (About box, app icon, etc.).
+    logo_map = {
+        'product_logo_16.png': 'product_logo_16.png',
+        'product_logo_24.png': 'product_logo_24.png',
+        'product_logo_32.png': 'product_logo_32.png',
+        'product_logo_48.png': 'product_logo_48.png',
+        'product_logo_64.png': 'product_logo_64.png',
+        'product_logo_128.png': 'product_logo_128.png',
+        'product_logo_256.png': 'product_logo_256.png',
+    }
+    for src_name, dst_name in logo_map.items():
+        src = branding_dir / src_name
+        dst = theme / dst_name
+        if src.exists() and dst.parent.exists():
+            shutil.copy2(src, dst)
+            get_logger().info('DIG branding: %s', dst_name)
+        else:
+            get_logger().warning('DIG branding: skip %s (missing src or dst dir)', dst_name)
+
+    # Windows executable / taskbar icon. Chromium reads this multi-resolution
+    # .ico for chrome.exe (chrome/app/chrome_exe.ver / chrome_dll.rc).
+    ico_src = branding_dir / 'chrome.ico'
+    for ico_dst in [
+        theme / 'win' / 'tiles' / 'Logo.png',  # may not exist on all branches
+        theme / 'win' / 'chromium.ico',
+        source_tree / 'chrome' / 'app' / 'theme' / 'chromium' / 'win' / 'chrome.ico',
+    ]:
+        if ico_dst.suffix == '.ico' and ico_src.exists() and ico_dst.parent.exists():
+            shutil.copy2(ico_src, ico_dst)
+            get_logger().info('DIG branding: %s', ico_dst.name)
+
+    # Branded new-tab / start page asset, copied next to the NTP resources so
+    # the windows-dig-newtab.patch can reference it. Best-effort.
+    newtab_src = _ROOT_DIR / 'dig' / 'newtab' / 'dig_newtab.html'
+    if newtab_src.exists():
+        dst_dir = source_tree / 'chrome' / 'browser' / 'resources' / 'dig'
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(newtab_src, dst_dir / 'dig_newtab.html')
+        logo256 = branding_dir / 'dig_logo_256.png'
+        if logo256.exists():
+            shutil.copy2(logo256, dst_dir / 'dig_logo_256.png')
+        get_logger().info('DIG branding: new-tab page installed')
+
+    # Rebrand the user-visible product/company strings in chromium_strings.grd.
+    # Done as a tolerant text substitution (rather than a line-anchored quilt
+    # hunk) so it survives Chromium rebases that move these <message> elements.
+    grd = source_tree / 'chrome' / 'app' / 'chromium_strings.grd'
+    if grd.exists():
+        try:
+            text = grd.read_text(encoding=ENCODING)
+            subs = [
+                ('name="IDS_PRODUCT_NAME"', 'Chromium', 'DIG Browser'),
+                ('name="IDS_SHORTCUT_NAME"', 'Chromium', 'DIG Browser'),
+                ('name="IDS_ABOUT_VERSION_COMPANY_NAME"',
+                 'The Chromium Authors', 'DIG Network'),
+            ]
+            changed = False
+            for anchor, old, new in subs:
+                # Replace `>old<` only within the message element that carries
+                # `anchor`, so we don't touch unrelated occurrences.
+                idx = text.find(anchor)
+                if idx == -1:
+                    get_logger().warning('DIG branding: grd anchor not found: %s', anchor)
+                    continue
+                end = text.find('</message>', idx)
+                if end == -1:
+                    continue
+                segment = text[idx:end]
+                needle = '>' + old + '<'
+                if needle in segment:
+                    segment = segment.replace(needle, '>' + new + '<', 1)
+                    text = text[:idx] + segment + text[end:]
+                    changed = True
+            if changed:
+                grd.write_text(text, encoding=ENCODING)
+                get_logger().info('DIG branding: rebranded chromium_strings.grd')
+        except Exception as exc:  # best-effort, never fail the build on this
+            get_logger().warning('DIG branding: grd substitution skipped (%s)', exc)
+
+
 def _get_vcvars_path(name='64'):
     """
     Returns the path to the corresponding vcvars*.bat path
@@ -226,6 +325,10 @@ def main():
             source_tree,
             patch_bin_path=(source_tree / _PATCH_BIN_RELPATH)
         )
+
+        # Overlay DIG Browser binary brand assets (icons + new-tab page).
+        get_logger().info('Applying DIG Browser branding assets...')
+        _apply_dig_branding(source_tree)
 
         # Substitute domains
         domain_substitution_list = (_ROOT_DIR / 'ungoogled-chromium' / 'domain_substitution.list') if args.tarball else (_ROOT_DIR  / 'domain_substitution.list')

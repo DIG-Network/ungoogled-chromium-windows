@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>DIG Browser</title>
+<style>
+  :root{
+    --bg-0:#08040f; --bg-1:#0c0718; --bg-2:#150a2b;
+    --ink:#ECE6F7; --muted:#B9AFD6; --faint:#7C6FA6;
+    --purple:#5800D6; --g0:#6645EB; --g1:#D445EB;
+    --card:rgba(255,255,255,.04); --border:rgba(255,255,255,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1100px 700px at 50% -12%, #2a1356 0%, transparent 60%),
+      radial-gradient(900px 600px at 110% 10%, rgba(212,69,235,.18) 0%, transparent 55%),
+      linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    min-height:100%;
+    display:flex; flex-direction:column; align-items:center;
+    padding:0 20px;
+  }
+  .wrap{width:100%; max-width:720px; margin:auto; text-align:center; padding:48px 0}
+  .logo{
+    width:96px;height:96px;margin:0 auto 22px;border-radius:26px;
+    background:linear-gradient(135deg,var(--g0) 0%,var(--g1) 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:52px;color:#fff;letter-spacing:-2px;
+    box-shadow:0 18px 60px rgba(120,53,235,.5);
+  }
+  h1{font-size:30px;font-weight:750;margin:0 0 6px;letter-spacing:-.5px}
+  .tag{font-size:15px;color:var(--muted);margin:0 0 34px}
+  .tag b{color:#fff;font-weight:600}
+  form{position:relative;margin:0 auto 14px;max-width:620px}
+  .bar{
+    display:flex;align-items:center;gap:10px;
+    background:var(--card);border:1px solid var(--border);
+    border-radius:16px;padding:6px 8px 6px 18px;
+    backdrop-filter:blur(8px);
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .bar:focus-within{border-color:rgba(150,90,255,.6);box-shadow:0 0 0 4px rgba(120,53,235,.18)}
+  .bar .scheme{color:var(--faint);font:600 14px ui-monospace,monospace;user-select:none}
+  .bar input{
+    flex:1;background:transparent;border:0;outline:0;color:var(--ink);
+    font:500 15px 'Segoe UI',system-ui,sans-serif;padding:10px 0;
+  }
+  .bar input::placeholder{color:var(--faint)}
+  .go{
+    border:0;cursor:pointer;color:#fff;font-weight:650;font-size:14px;
+    padding:11px 20px;border-radius:11px;
+    background:linear-gradient(135deg,var(--g0) 0%,var(--g1) 100%);
+    transition:transform .08s ease, filter .15s ease;
+  }
+  .go:hover{filter:brightness(1.08)} .go:active{transform:translateY(1px)}
+  .hint{font-size:12px;color:var(--faint);margin:0 0 40px}
+  .hint code{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:2px 6px;font-size:11px}
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px;margin-top:8px;
+  }
+  .tile{
+    display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+    text-align:left;text-decoration:none;color:var(--ink);
+    background:var(--card);border:1px solid var(--border);
+    border-radius:14px;padding:16px 16px;
+    transition:transform .1s ease, border-color .15s ease, background .15s ease;
+  }
+  .tile:hover{transform:translateY(-2px);border-color:rgba(150,90,255,.4);background:rgba(255,255,255,.06)}
+  .tile .ic{
+    width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,rgba(102,69,235,.35),rgba(212,69,235,.35));
+    font-size:18px;
+  }
+  .tile .t{font-weight:650;font-size:14px}
+  .tile .d{font-size:12px;color:var(--muted);line-height:1.4}
+  footer{margin-top:auto;padding:22px 0;font-size:12px;color:var(--faint)}
+  footer a{color:var(--muted);text-decoration:none}
+  footer a:hover{color:#fff}
+  .verify{
+    display:inline-flex;align-items:center;gap:6px;margin-top:2px;
+    font-size:11px;color:var(--faint)
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(135deg,var(--g0),var(--g1))}
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="logo" aria-hidden="true">D</div>
+    <h1>DIG Browser</h1>
+    <p class="tag">The native gateway to the <b>DIG Network</b> &mdash; verifiable, decentralized content.</p>
+
+    <form id="dig-form" autocomplete="off">
+      <div class="bar">
+        <span class="scheme">dig://</span>
+        <input id="dig-input" type="text"
+               placeholder="store id, urn:dig:chia:&hellip;, or a resource path"
+               aria-label="DIG address"
+               spellcheck="false" autofocus>
+        <button class="go" type="submit">Open</button>
+      </div>
+    </form>
+    <p class="hint">Try a full URN like
+      <code>urn:dig:chia:&lt;storeID&gt;[:&lt;root&gt;]/index.html</code>
+      &mdash; content is fetched from <code>rpc.dig.net</code>, then verified and
+      decrypted on this device.</p>
+
+    <nav class="grid">
+      <a class="tile" href="https://dig.net">
+        <div class="ic">&#127760;</div>
+        <div class="t">What is DIG?</div>
+        <div class="d">Learn about the DIG Network L2 content layer.</div>
+      </a>
+      <a class="tile" href="https://hub.dig.net">
+        <div class="ic">&#128193;</div>
+        <div class="t">DIG Hub</div>
+        <div class="d">Publish and host encrypted stores.</div>
+      </a>
+      <a class="tile" href="https://docs.dig.net">
+        <div class="ic">&#128214;</div>
+        <div class="t">Docs</div>
+        <div class="d">URN scheme, RPC, and the read protocol.</div>
+      </a>
+      <a class="tile" href="https://github.com/DIG-Network">
+        <div class="ic">&#9881;&#65039;</div>
+        <div class="t">Source</div>
+        <div class="d">DIG Network on GitHub.</div>
+      </a>
+    </nav>
+
+    <span class="verify"><span class="dot"></span>
+      Every dig:// resource is Merkle-verified against its on-chain root and decrypted locally.</span>
+  </main>
+
+  <footer>
+    DIG Browser &middot; a <a href="https://dig.net">DIG Network</a> product
+    &middot; built on ungoogled-chromium
+  </footer>
+
+  <script>
+    // Navigate to a dig:// address. Accepts a bare store id / URN / path and
+    // normalizes to the dig:// scheme that the native handler resolves.
+    (function () {
+      var form = document.getElementById('dig-form');
+      var input = document.getElementById('dig-input');
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var v = (input.value || '').trim();
+        if (!v) return;
+        // Strip a leading scheme/urn prefix the user may have typed.
+        v = v.replace(/^dig:\/\//i, '').replace(/^urn:dig:/i, '');
+        location.href = 'dig://' + v;
+      });
+    })();
+  </script>
+</body>
+</html>

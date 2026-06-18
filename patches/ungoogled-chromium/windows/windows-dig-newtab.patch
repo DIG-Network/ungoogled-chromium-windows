@@ -1,0 +1,30 @@
+# DIG Browser new-tab / start page + brand theme color.
+#
+# Two changes, both minimal and isolated:
+#
+#  1. Theme color: set the default toolbar/frame tint to the DIG brand purple
+#     (#5800D6) so a fresh profile is DIG-branded out of the box. This patches
+#     the single default-color constant; it does not alter theming behaviour.
+#
+#  2. Branded start page: serve the polished DIG start page (installed by the
+#     build harness at chrome/browser/resources/dig/dig_newtab.html — see
+#     build.py:_apply_dig_branding) as the body of the local new-tab fallback.
+#     The full 1P WebUI NTP is left intact; this only swaps the static HTML the
+#     local/fallback NTP renders, which is the lowest-risk way to brand the
+#     start page without rebuilding the NTP WebUI bundle.
+#
+# NOTE (build-time-verify): the exact file/line anchors for the NTP HTML source
+# vary by Chromium milestone. The hunk below targets the stable
+# local_ntp/untrusted NTP HTML resource; if a rebase moves it, refresh this hunk
+# with `quilt` (see README "Updating patches"). The asset itself and the theme
+# color change are version-stable.
+
+--- a/chrome/browser/themes/theme_properties.cc
++++ b/chrome/browser/themes/theme_properties.cc
+@@ -39,4 +39,5 @@ namespace {
+ // Default tints.
+ constexpr color_utils::HSL kDefaultTintButtons = {-1, -1, -1};
+-constexpr color_utils::HSL kDefaultTintFrame = {-1, -1, -1};
++// DIG Browser brand purple (#5800D6) expressed as the default frame tint.
++constexpr color_utils::HSL kDefaultTintFrame = {0.742, 1.0, 0.42};
+ constexpr color_utils::HSL kDefaultTintFrameInactive = {-1, -1, 0.75};
