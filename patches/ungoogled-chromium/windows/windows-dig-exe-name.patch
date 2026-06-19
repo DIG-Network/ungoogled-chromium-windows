@@ -1,0 +1,31 @@
+# DIG Browser executable name.
+#
+# Renames the Windows browser/helper process executable from "chrome.exe" to
+# "dig.exe" at its source of truth — the kBrowserProcessExecutable{Name,Path}
+# and kHelperProcessExecutable{Name,Path} constants. These constants are how
+# the running browser identifies and (re)launches its own executable, so they
+# must agree with the on-disk artifact, which build.py renames to dig.exe after
+# the build. chrome.dll is loaded by its own literal name and is unaffected.
+#
+# Strings only; no behavioural change. The IS_WIN block here is stable across
+# Chromium releases, so the hunks apply cleanly.
+--- a/chrome/common/chrome_constants.cc
++++ b/chrome/common/chrome_constants.cc
+@@ -34,6 +34,6 @@
+ #if BUILDFLAG(IS_WIN)
+ const base::FilePath::CharType kBrowserProcessExecutableName[] =
+-    FPL("chrome.exe");
++    FPL("dig.exe");
+ const base::FilePath::CharType kHelperProcessExecutableName[] =
+-    FPL("chrome.exe");
++    FPL("dig.exe");
+ #elif BUILDFLAG(IS_MAC)
+@@ -56,6 +56,6 @@
+ #if BUILDFLAG(IS_WIN)
+ const base::FilePath::CharType kBrowserProcessExecutablePath[] =
+-    FPL("chrome.exe");
++    FPL("dig.exe");
+ const base::FilePath::CharType kHelperProcessExecutablePath[] =
+-    FPL("chrome.exe");
++    FPL("dig.exe");
+ #elif BUILDFLAG(IS_MAC)

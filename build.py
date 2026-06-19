@@ -297,8 +297,13 @@ def main():
             pruning_list.read_text(encoding=ENCODING).splitlines()
         )
         if unremovable_files:
-            get_logger().error('Files could not be pruned: %s', unremovable_files)
-            parser.exit(1)
+            # The official `-lite` source tarball already omits some files that pruning.list
+            # targets (build/test data, etc.). Those show up here as "unremovable" only because
+            # they are already gone — not a real failure. Warn and continue rather than aborting
+            # the whole build over already-absent files.
+            get_logger().warning(
+                'pruning.list entries already absent (expected for the -lite tarball), skipping: %s',
+                unremovable_files)
 
         # Unpack downloads
         DIRECTX = source_tree / 'third_party' / 'microsoft_dxheaders' / 'src'
@@ -427,6 +432,20 @@ def main():
         subprocess.run([sys.executable, 'package.py', '--cpu-arch', '32bit' if args.x86 else 'arm' if args.arm else '64bit'])
     else:
         _run_build_process(*ninja_commandline)
+
+    # Rename the built browser executable to the DIG Browser name. The
+    # kBrowserProcessExecutable{Name,Path} constants are patched to "dig.exe"
+    # (windows-dig-exe-name.patch), so the binary already expects this name;
+    # here we make the on-disk artifact agree. chrome.dll is loaded by its own
+    # literal name and is unaffected by the rename.
+    out_dir = source_tree / 'out' / 'Default'
+    built_exe = out_dir / 'chrome.exe'
+    dig_exe = out_dir / 'dig.exe'
+    if built_exe.exists():
+        if dig_exe.exists():
+            dig_exe.unlink()
+        built_exe.rename(dig_exe)
+        get_logger().info('Renamed browser executable to %s', dig_exe)
 
 
 if __name__ == '__main__':
