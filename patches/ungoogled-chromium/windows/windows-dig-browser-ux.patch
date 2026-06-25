@@ -331,6 +331,166 @@
    }
  #endif
  
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -16,6 +16,7 @@
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/browser/dig/dig_tab_helper.h"
+ #include "chrome/browser/buildflags.h"
+ #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
+ #include "chrome/browser/chained_back_navigation_tracker.h"
+@@ -330,6 +331,10 @@
+   // ChromeSubresourceFilterClient has it as a dependency.
+   infobars::ContentInfoBarManager::CreateForWebContents(web_contents);
+ 
++  // DIG: tracks whether the current dig:// page was served from the local DIG
++  // cache, for the omnibox "local" chip.
++  dig::DigTabHelper::CreateForWebContents(web_contents);
++
+   Profile* profile =
+       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+ 
+@@ -544,7 +549,9 @@
+       profile, web_contents);
+ #endif  // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+   SafetyTipWebContentsObserver::CreateForWebContents(web_contents);
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
+   SearchEngineTabHelper::CreateForWebContents(web_contents);
++  }
+   if (site_engagement::SiteEngagementService::IsEnabled()) {
+     site_engagement::SiteEngagementService::Helper::CreateForWebContents(
+         web_contents,
+--- a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.h
++++ b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.h
+@@ -45,6 +45,7 @@
+   scoped_refptr<net::X509Certificate> GetCertificate() const override;
+   const gfx::VectorIcon* GetVectorIconOverride() const override;
+   bool IsOfflinePage() const override;
++  bool IsCurrentPageDigLocal() const override;
+   bool IsNewTabPage() const override;
+   bool IsNewTabPageURL(const GURL& url) const override;
+   bool IsHomePage(const GURL& url) const override;
+--- a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
++++ b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
+@@ -10,6 +10,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+ #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
++#include "chrome/browser/dig/dig_tab_helper.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/search/search.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+@@ -204,6 +205,15 @@
+ #endif
+ }
+ 
++bool ChromeLocationBarModelDelegate::IsCurrentPageDigLocal() const {
++  content::WebContents* web_contents = GetActiveWebContents();
++  if (!web_contents) {
++    return false;
++  }
++  dig::DigTabHelper* helper = dig::DigTabHelper::FromWebContents(web_contents);
++  return helper && helper->served_locally();
++}
++
+ bool ChromeLocationBarModelDelegate::IsNewTabPage() const {
+   content::NavigationEntry* const entry = GetNavigationEntry();
+   if (!entry || entry->IsInitialEntry()) {
+@@ -268,5 +278,5 @@
+ // static
+ void ChromeLocationBarModelDelegate::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+-  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, false);
++  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, true);
+ }
+--- /dev/null
++++ b/chrome/browser/dig/dig_tab_helper.h
+@@ -0,0 +1,43 @@
++// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_DIG_DIG_TAB_HELPER_H_
++#define CHROME_BROWSER_DIG_DIG_TAB_HELPER_H_
++
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++
++namespace content {
++class NavigationHandle;
++}
++
++namespace dig {
++
++// Per-tab: remembers whether the current dig:// main document was served from
++// this device's local DIG cache (response header "X-Dig-Source: local") so the
++// omnibox can show a "local" chip. Reset on every primary main-frame navigation.
++class DigTabHelper : public content::WebContentsObserver,
++                     public content::WebContentsUserData<DigTabHelper> {
++ public:
++  DigTabHelper(const DigTabHelper&) = delete;
++  DigTabHelper& operator=(const DigTabHelper&) = delete;
++  ~DigTabHelper() override;
++
++  bool served_locally() const { return served_locally_; }
++
++  // content::WebContentsObserver:
++  void DidFinishNavigation(content::NavigationHandle* navigation_handle) override;
++
++ private:
++  explicit DigTabHelper(content::WebContents* web_contents);
++  friend class content::WebContentsUserData<DigTabHelper>;
++
++  bool served_locally_ = false;
++
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++
++}  // namespace dig
++
++#endif  // CHROME_BROWSER_DIG_DIG_TAB_HELPER_H_
+--- /dev/null
++++ b/chrome/browser/dig/dig_tab_helper.cc
+@@ -0,0 +1,37 @@
++// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/dig/dig_tab_helper.h"
++
++#include "content/public/browser/navigation_handle.h"
++#include "net/http/http_response_headers.h"
++#include "url/url_constants.h"
++
++namespace dig {
++
++DigTabHelper::DigTabHelper(content::WebContents* web_contents)
++    : content::WebContentsObserver(web_contents),
++      content::WebContentsUserData<DigTabHelper>(*web_contents) {}
++
++DigTabHelper::~DigTabHelper() = default;
++
++void DigTabHelper::DidFinishNavigation(
++    content::NavigationHandle* navigation_handle) {
++  if (!navigation_handle->IsInPrimaryMainFrame() ||
++      !navigation_handle->HasCommitted()) {
++    return;
++  }
++  served_locally_ = false;
++  if (navigation_handle->GetURL().SchemeIs(url::kDigScheme)) {
++    const net::HttpResponseHeaders* headers =
++        navigation_handle->GetResponseHeaders();
++    if (headers && headers->HasHeaderValue("X-Dig-Source", "local")) {
++      served_locally_ = true;
++    }
++  }
++}
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(DigTabHelper);
++
++}  // namespace dig
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -634,8 +634,6 @@
@@ -499,7 +659,7 @@
      "//components/security_interstitials/content:security_interstitial_page",
 --- /dev/null
 +++ b/chrome/browser/dig/BUILD.gn
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +# Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
@@ -508,6 +668,8 @@
 +  sources = [
 +    "dig_native_runtime.cc",
 +    "dig_native_runtime.h",
++    "dig_tab_helper.cc",
++    "dig_tab_helper.h",
 +    "dig_url_loader_factory.cc",
 +    "dig_url_loader_factory.h",
 +  ]
@@ -741,7 +903,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,676 @@
+@@ -0,0 +1,686 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1169,6 +1331,12 @@
 +      return;
 +    }
 +
++    // Where the node served this from: "local" (this device's cache) or
++    // "remote" (rpc.dig.net). Surfaced to the omnibox as the "local" chip.
++    if (const std::string* src = result->FindString("source")) {
++      source_ = *src;
++    }
++
 +    // First window: allocate the output buffer and capture chunk_lens.
 +    if (total_length_ < 0) {
 +      std::optional<double> total = result->FindDouble("total_length");
@@ -1277,6 +1445,7 @@
 +    std::string raw_headers =
 +        base::StrCat({"HTTP/1.1 200 OK\r\nContent-Type: ", mime_type_,
 +                      "\r\nX-Dig-Verified: ", verified_ ? "true" : "false",
++                      "\r\nX-Dig-Source: ", source_.empty() ? "remote" : source_,
 +                      "\r\n\r\n"});
 +    head->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
 +        net::HttpUtil::AssembleRawHeaders(raw_headers));
@@ -1374,6 +1543,9 @@
 +  std::string output_;
 +  std::string mime_type_ = "text/html";
 +  bool verified_ = false;
++  // "local" (served from this device's DIG cache) or "remote"/"" (from
++  // rpc.dig.net). Emitted as the X-Dig-Source header → the omnibox "local" chip.
++  std::string source_;
 +  std::unique_ptr<mojo::DataPipeProducer> data_producer_;
 +
 +  base::WeakPtrFactory<DigURLLoader> weak_factory_{this};
