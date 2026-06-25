@@ -136,6 +136,24 @@ def _apply_dig_branding(source_tree):
         except Exception as exc:  # best-effort
             get_logger().warning('DIG branding: dig_home_html.inc skipped (%s)', exc)
 
+    # Generate the embeddable injected wallet provider (window.chia, CHIP-0002),
+    # compiled into the renderer and injected into every page at document start
+    # by chrome_render_frame_observer.cc. Single source: dig/provider/dig_provider.js.
+    provider_src = _ROOT_DIR / 'dig' / 'provider' / 'dig_provider.js'
+    if provider_src.exists():
+        try:
+            provider_js = provider_src.read_text(encoding=ENCODING)
+            inc = ('// Generated from dig/provider/dig_provider.js by build.py. '
+                   'Do not edit.\n'
+                   'inline constexpr char kDigProviderJs[] = R"DIGJS('
+                   + provider_js + ')DIGJS";\n')
+            inc_dst = source_tree / 'chrome' / 'renderer' / 'dig_provider_js.inc'
+            inc_dst.parent.mkdir(parents=True, exist_ok=True)
+            inc_dst.write_text(inc, encoding=ENCODING)
+            get_logger().info('DIG branding: generated dig_provider_js.inc')
+        except Exception as exc:  # best-effort
+            get_logger().warning('DIG branding: dig_provider_js.inc skipped (%s)', exc)
+
     # Rebrand EVERY user-visible product/company string so "Chromium" appears on
     # no screen. Chromium keeps these in chrome/app/chromium_strings.grd and its
     # settings_chromium_strings.grdp part (chrome://settings, the About page,
