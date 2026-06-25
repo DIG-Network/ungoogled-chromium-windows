@@ -110,6 +110,32 @@ def _apply_dig_branding(source_tree):
             shutil.copy2(logo256, dst_dir / 'dig_logo_256.png')
         get_logger().info('DIG branding: new-tab page installed')
 
+        # Generate the embeddable DIG Home for the dig://home new-tab page: a
+        # single self-contained resource (logo inlined as a data URI, external
+        # font @import dropped) compiled into the browser and served by the dig
+        # handler for dig://home. Single source: dig/newtab/dig_newtab.html.
+        try:
+            import base64
+            home_html = newtab_src.read_text(encoding=ENCODING)
+            if logo256.exists():
+                data_uri = ('data:image/png;base64,'
+                            + base64.b64encode(logo256.read_bytes()).decode('ascii'))
+                home_html = home_html.replace('src="dig_logo_256.png"',
+                                              'src="' + data_uri + '"')
+            home_html = re.sub(
+                r"\s*@import url\('https://fonts\.googleapis\.com[^']*'\);", '',
+                home_html)
+            inc = ('// Generated from dig/newtab/dig_newtab.html by build.py. '
+                   'Do not edit.\n'
+                   'inline constexpr char kDigHomeHtml[] = R"DIGHTML('
+                   + home_html + ')DIGHTML";\n')
+            inc_dst = source_tree / 'chrome' / 'browser' / 'dig' / 'dig_home_html.inc'
+            inc_dst.parent.mkdir(parents=True, exist_ok=True)
+            inc_dst.write_text(inc, encoding=ENCODING)
+            get_logger().info('DIG branding: generated dig_home_html.inc')
+        except Exception as exc:  # best-effort
+            get_logger().warning('DIG branding: dig_home_html.inc skipped (%s)', exc)
+
     # Rebrand EVERY user-visible product/company string so "Chromium" appears on
     # no screen. Chromium keeps these in chrome/app/chromium_strings.grd and its
     # settings_chromium_strings.grdp part (chrome://settings, the About page,
