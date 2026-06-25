@@ -4,235 +4,212 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#5800D6">
 <title>DIG</title>
 <style>
+  /* dig.net brand kit — fonts (fall back cleanly if the CDN is unreachable). */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
   :root{
-    --bg-0:#070310; --bg-1:#0b0618; --ink:#F1ECFA; --muted:#B6ABD6; --faint:#7E72A8;
-    --violet:#5800D6; --g0:#7A4BEE; --g1:#D445EB; --chia:#3AD17F;
-    --card:rgba(255,255,255,.045); --card-2:rgba(255,255,255,.07);
-    --border:rgba(255,255,255,.09); --border-hi:rgba(150,90,255,.55);
+    /* dig.net design tokens (styles/globals.css) */
+    --violet:#5800D6; --magenta:#FF00DE; --pink:#FF3DF5;
+    --grad-logo:linear-gradient(150deg,#5800D6 0%,#FF00DE 100%);
+    --grad-text:linear-gradient(100deg,#B98CFF 0%,#FF6BEE 100%);
+    --bg-void:#0A0A20; --bg-space:#101132; --bg-panel:#16153A; --bg-card:#191248; --bg-card-2:#221a59;
+    --fg1:#FFFFFF; --fg2:#C5C1E0; --fg3:#9A95C0; --fg4:#6E6A99;
+    --border-subtle:rgba(255,255,255,.08); --border-soft:rgba(138,110,255,.18);
+    --border-violet:rgba(88,0,214,.55); --border-bright:rgba(255,0,222,.60);
+    --glass:rgba(25,18,72,.55); --glass-strong:rgba(16,17,50,.82); --glass-hair:rgba(255,255,255,.06);
+    --chia:#5ECE71; --chia-line:rgba(94,206,113,.45);
+    --shadow-card:0 18px 50px rgba(0,0,0,.45); --glow-violet:0 0 40px rgba(88,0,214,.55);
+    --font-display:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+    --font-body:'Open Sans',system-ui,-apple-system,sans-serif;
+    --font-mono:'Space Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --r-md:14px; --r-lg:20px; --r-xl:28px; --r-pill:999px;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   body{
-    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:var(--ink);
-    background:
-      radial-gradient(1200px 720px at 50% -18%, #2c1560 0%, transparent 58%),
-      radial-gradient(820px 560px at 112% 8%, rgba(212,69,235,.16) 0%, transparent 55%),
-      radial-gradient(760px 560px at -12% 92%, rgba(58,209,127,.10) 0%, transparent 55%),
-      linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+    font-family:var(--font-body); color:var(--fg2);
+    background:#110c2f;
+    background-image:radial-gradient(120% 2300px at 50% 0%, #241062 0%, #150d36 38%, #110c2f 70%);
+    background-attachment:fixed;
     min-height:100%; display:flex; flex-direction:column; overflow-x:hidden;
   }
   a{color:inherit}
-  /* top bar */
-  header{display:flex;align-items:center;justify-content:space-between;padding:20px 26px}
+  .eyebrow{font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.18em;
+           text-transform:uppercase;color:var(--magenta)}
+  /* nav */
+  header{display:flex;align-items:center;justify-content:space-between;
+         padding:16px 26px;backdrop-filter:blur(16px) saturate(1.2);
+         background:linear-gradient(180deg,rgba(16,17,50,.45),transparent);
+         position:sticky;top:0;z-index:5}
   .brand{display:flex;align-items:center;gap:11px;text-decoration:none}
-  .coin{
-    width:34px;height:34px;border-radius:50%;
-    background:linear-gradient(135deg,var(--g0),var(--g1));
-    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;
-    box-shadow:0 6px 22px rgba(120,53,235,.5), inset 0 1px 0 rgba(255,255,255,.4);
-  }
-  .brand .nm{font-weight:750;letter-spacing:.5px;font-size:18px}
-  .brand .nm span{color:var(--faint);font-weight:600}
-  .top-actions{display:flex;align-items:center;gap:10px}
-  .pill{
-    display:inline-flex;align-items:center;gap:8px;cursor:pointer;text-decoration:none;
-    background:var(--card);border:1px solid var(--border);border-radius:999px;
-    padding:8px 14px;color:var(--ink);font-size:13px;font-weight:600;
-    transition:border-color .15s, background .15s, transform .08s;
-  }
-  .pill:hover{border-color:var(--border-hi);background:var(--card-2)}
-  .pill:active{transform:translateY(1px)}
-  .pill .wd{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,var(--g0),var(--g1))}
-  .pill.wallet .bal{color:var(--muted);font-weight:600}
-  .pill.wallet .bal b{color:#fff;font-weight:700}
+  .brand img{width:30px;height:30px;display:block;filter:drop-shadow(0 4px 14px rgba(120,30,220,.6))}
+  .brand .wm{font-family:var(--font-display);font-weight:700;letter-spacing:.06em;font-size:16px;color:var(--fg1)}
+  .brand .wm span{color:var(--fg3);font-weight:500}
+  .nav-actions{display:flex;align-items:center;gap:10px}
+  .btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;text-decoration:none;
+       font-family:var(--font-display);font-weight:600;font-size:13.5px;border-radius:var(--r-pill);
+       padding:10px 18px;border:1px solid transparent;transition:transform .08s,filter .15s,border-color .15s,background .15s}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--grad-logo);color:#fff;box-shadow:0 8px 30px rgba(88,0,214,.5)}
+  .btn-primary:hover{filter:brightness(1.08);box-shadow:0 8px 34px rgba(255,0,222,.5)}
+  .btn-ghost{background:var(--glass);color:var(--fg1);border-color:var(--border-soft);
+             backdrop-filter:blur(10px) saturate(1.1)}
+  .btn-ghost:hover{border-color:var(--border-violet);background:var(--bg-card-2)}
+  .btn .wd{width:9px;height:9px;border-radius:50%;background:var(--grad-logo)}
   /* hero */
   main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-       padding:0 22px;width:100%;max-width:860px;margin:0 auto;text-align:center}
-  .hero-mark{
-    width:84px;height:84px;border-radius:24px;margin:0 auto 20px;
-    background:linear-gradient(135deg,var(--g0) 0%,var(--g1) 100%);
-    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:46px;
-    letter-spacing:-2px;box-shadow:0 20px 64px rgba(120,53,235,.5), inset 0 2px 0 rgba(255,255,255,.35);
-  }
-  h1{font-size:32px;font-weight:760;letter-spacing:-.6px;margin:0 0 8px}
-  .tag{font-size:15px;color:var(--muted);margin:0 0 30px}
-  .tag b{color:#fff;font-weight:650}
+       width:100%;max-width:920px;margin:0 auto;padding:24px 22px 0;text-align:center}
+  .mark{width:92px;height:92px;margin:0 0 22px;filter:drop-shadow(0 0 40px rgba(88,0,214,.55))}
+  h1{font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;line-height:1.05;
+     font-size:clamp(40px,7vw,68px);margin:14px 0 0;color:var(--fg1)}
+  h1 .gt{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:18px;line-height:1.6;color:var(--fg2);margin:14px auto 30px;max-width:560px}
   /* search */
-  form{position:relative;width:100%;max-width:640px;margin:0 auto}
-  .bar{
-    display:flex;align-items:center;gap:10px;
-    background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:18px;
-    padding:7px 8px 7px 18px;backdrop-filter:blur(10px);
-    transition:border-color .15s, box-shadow .15s;
-  }
-  .bar:focus-within{border-color:var(--border-hi);box-shadow:0 0 0 4px rgba(120,53,235,.16)}
-  .bar .lead{display:flex;align-items:center;color:var(--faint)}
-  .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);
-             font:500 16px 'Segoe UI',system-ui,sans-serif;padding:12px 0}
-  .bar input::placeholder{color:var(--faint)}
-  .go{border:0;cursor:pointer;color:#fff;font-weight:680;font-size:14px;padding:12px 22px;border-radius:13px;
-      background:linear-gradient(135deg,var(--g0),var(--g1));transition:filter .15s, transform .08s}
-  .go:hover{filter:brightness(1.09)} .go:active{transform:translateY(1px)}
-  .mode{margin:11px 2px 0;font-size:12px;color:var(--faint);height:16px;transition:color .15s}
-  .mode b{color:var(--muted);font-weight:600}
+  form{position:relative;width:100%;max-width:660px;margin:0 auto}
+  .bar{display:flex;align-items:center;gap:10px;background:var(--glass-strong);
+       border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:7px 8px 7px 18px;
+       backdrop-filter:blur(12px);transition:border-color .15s,box-shadow .15s}
+  .bar:focus-within{border-color:var(--border-violet);box-shadow:0 0 0 4px rgba(88,0,214,.22)}
+  .bar .lead-ic{display:flex;color:var(--fg4);font-size:17px}
+  .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--fg1);
+             font:500 16px var(--font-body);padding:13px 0}
+  .bar input::placeholder{color:var(--fg4)}
+  .go{border:0;cursor:pointer;color:#fff;font-family:var(--font-display);font-weight:600;font-size:14px;
+      padding:13px 24px;border-radius:var(--r-md);background:var(--grad-logo);
+      box-shadow:0 6px 22px rgba(88,0,214,.45);transition:filter .15s,transform .08s}
+  .go:hover{filter:brightness(1.08)} .go:active{transform:translateY(1px)}
+  .mode{margin:12px 2px 0;font-size:13px;color:var(--fg4);height:18px;font-family:var(--font-body)}
+  .mode b{color:var(--fg3);font-weight:600}
   .mode.dig b{color:#C9A6FF}
+  .chia-chip{display:inline-flex;align-items:center;gap:8px;margin-top:22px;
+             font-family:var(--font-display);font-size:12.5px;font-weight:600;color:var(--fg3);
+             background:var(--glass);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding:7px 14px}
+  .chia-chip .leaf{width:8px;height:8px;border-radius:50%;background:var(--chia);box-shadow:0 0 10px rgba(94,206,113,.8)}
   /* quick actions */
-  .quick{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:30px 0 6px}
-  .qa{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink);
-      background:var(--card);border:1px solid var(--border);border-radius:13px;padding:11px 16px;font-size:13px;font-weight:600;
-      transition:transform .1s, border-color .15s, background .15s}
-  .qa:hover{transform:translateY(-2px);border-color:var(--border-hi);background:var(--card-2)}
-  .qa .e{font-size:16px}
-  /* featured */
-  .section{width:100%;max-width:760px;margin:42px auto 0;text-align:left}
-  .section h2{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-              color:var(--faint);margin:0 0 14px;display:flex;align-items:center;gap:8px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
-  .store{display:block;text-decoration:none;color:var(--ink);
-         background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;
-         transition:transform .1s, border-color .15s, background .15s}
-  .store:hover{transform:translateY(-3px);border-color:var(--border-hi);background:var(--card-2)}
-  .store .row{display:flex;align-items:center;gap:11px;margin-bottom:9px}
-  .store .av{width:38px;height:38px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;
-             font-size:19px;background:linear-gradient(135deg,rgba(122,75,238,.4),rgba(212,69,235,.4))}
-  .store .nm{font-weight:680;font-size:15px;line-height:1.1}
-  .store .sid{font:500 11px ui-monospace,monospace;color:var(--faint);margin-top:2px}
-  .store .ds{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0}
-  .vchip{display:inline-flex;align-items:center;gap:5px;margin-top:11px;
-         font-size:10.5px;font-weight:650;color:var(--chia);
-         background:rgba(58,209,127,.10);border:1px solid rgba(58,209,127,.25);border-radius:999px;padding:3px 9px}
-  .vchip .tick{font-size:10px}
-  /* trust footer */
-  footer{margin-top:auto;padding:26px 24px;text-align:center}
-  .trust{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;color:var(--faint)}
-  .trust .seal{display:inline-flex;align-items:center;gap:6px;color:var(--chia);font-weight:650}
-  .trust .seal .d{width:7px;height:7px;border-radius:50%;background:var(--chia);box-shadow:0 0 8px rgba(58,209,127,.7)}
-  .trust a{color:var(--muted);text-decoration:none} .trust a:hover{color:#fff}
-  @media (max-width:560px){h1{font-size:26px}.section{margin-top:30px}}
+  .quick{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:30px 0 0}
+  .qa{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--fg1);
+      font-family:var(--font-display);font-weight:500;font-size:13.5px;
+      background:var(--glass);border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:11px 16px;
+      transition:transform .1s,border-color .15s,background .15s}
+  .qa:hover{transform:translateY(-2px);border-color:var(--border-violet);background:var(--bg-card-2)}
+  .qa .e{font-size:15px}
+  /* featured cards (.fcard) */
+  .section{width:100%;max-width:780px;margin:46px auto 0;text-align:left}
+  .section .eyebrow{display:block;margin:0 0 14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+  .fcard{display:block;text-decoration:none;color:var(--fg1);background:var(--bg-card);
+         border:1px solid var(--border-soft);border-radius:var(--r-xl);padding:18px;
+         box-shadow:var(--shadow-card);transition:transform .12s,border-color .15s,background .15s}
+  .fcard:hover{transform:translateY(-3px);border-color:var(--border-violet);background:var(--bg-card-2)}
+  .fcard .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .fcard .well{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
+               font-size:20px;background:rgba(88,0,214,.22);border:1px solid var(--border-soft)}
+  .fcard .nm{font-family:var(--font-display);font-weight:600;font-size:15.5px;line-height:1.1}
+  .fcard .sid{font:400 11px var(--font-mono);color:var(--fg4);margin-top:3px}
+  .fcard .ds{font-size:13px;color:var(--fg2);line-height:1.5;margin:0}
+  .vchip{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-family:var(--font-display);
+         font-size:10.5px;font-weight:600;color:var(--chia);
+         background:rgba(94,206,113,.10);border:1px solid var(--chia-line);border-radius:var(--r-pill);padding:3px 10px}
+  .vchip.ghost{color:var(--fg3);background:var(--glass);border-color:var(--border-soft)}
+  /* footer */
+  footer{margin-top:auto;padding:28px 24px;text-align:center}
+  .trust{font-size:12.5px;color:var(--fg4);font-family:var(--font-body)}
+  .trust .seal{font-family:var(--font-display);font-weight:600;color:var(--chia)}
+  .trust b{color:var(--fg3);font-weight:600}
+  @media(max-width:560px){.section{margin-top:32px}}
 </style>
 </head>
 <body>
   <header>
     <a class="brand" href="https://dig.net" title="DIG Network">
-      <span class="coin">◇</span>
-      <span class="nm">DIG<span> Browser</span></span>
+      <img src="dig_logo_256.png" alt="DIG">
+      <span class="wm">DIG<span> NETWORK</span></span>
     </a>
-    <div class="top-actions">
-      <a class="pill" href="https://hub.dig.net" title="Publish a store">&#43;&nbsp;New store</a>
-      <a class="pill wallet" id="wallet" href="#" title="Open your Chia wallet">
-        <span class="wd"></span><span class="bal" id="bal">Wallet</span>
-      </a>
-    </div>
+    <nav class="nav-actions">
+      <a class="btn btn-ghost wallet" id="wallet" href="#" title="Your Chia wallet"><span class="wd"></span>Wallet</a>
+      <a class="btn btn-primary" href="https://hub.dig.net/new" title="Publish on DIGHUb">&#43;&nbsp;New project</a>
+    </nav>
   </header>
 
   <main>
-    <div class="hero-mark" aria-hidden="true">◇</div>
-    <h1>Welcome to DIG</h1>
-    <p class="tag">Browse the web &mdash; or open the <b>DIG Network</b>, where every page is proven on&#8209;chain.</p>
+    <img class="mark" src="dig_logo_256.png" alt="DIG" aria-hidden="true">
+    <span class="eyebrow">Layer&nbsp;2 &middot; Provable &middot; Private</span>
+    <h1>Store the <span class="gt">world&rsquo;s data</span></h1>
+    <p class="lead">Browse the web, or open the DIG Network &mdash; where every page is proven on&#8209;chain and decrypted on your device.</p>
 
     <form id="omni" autocomplete="off">
       <div class="bar">
-        <span class="lead" id="lead" aria-hidden="true">&#128269;</span>
+        <span class="lead-ic" id="lead" aria-hidden="true">&#128269;</span>
         <input id="q" type="text" autofocus spellcheck="false"
                placeholder="Search the web, or open a dig:// store" aria-label="Search or DIG address">
         <button class="go" type="submit" id="goBtn">Search</button>
       </div>
     </form>
-    <div class="mode" id="mode">Tip: paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network</div>
+    <div class="mode" id="mode">Paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network</div>
+
+    <span class="chia-chip"><span class="leaf"></span>Powered by Chia</span>
 
     <nav class="quick">
       <a class="qa" id="qaWallet" href="#"><span class="e">&#128091;</span> Wallet</a>
-      <a class="qa" href="https://dig.net"><span class="e">&#127760;</span> DIG Network</a>
-      <a class="qa" href="https://hub.dig.net"><span class="e">&#10133;</span> Create a store</a>
+      <a class="qa" href="https://dig.net"><span class="e">&#9670;</span> DIG Network</a>
+      <a class="qa" href="https://hub.dig.net/new"><span class="e">&#10133;</span> Publish</a>
       <a class="qa" href="https://docs.dig.net"><span class="e">&#128214;</span> Docs</a>
     </nav>
 
-    <section class="section" id="featured">
-      <h2>On the DIG Network</h2>
-      <div class="grid" id="stores">
-        <a class="store" href="dig://urn:dig:chia:1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907/index.html">
-          <div class="row"><div class="av">&#127974;</div>
-            <div><div class="nm">XCH Annuity</div><div class="sid">1426d906&hellip;59907</div></div></div>
+    <section class="section">
+      <span class="eyebrow">On the DIG Network</span>
+      <div class="grid">
+        <a class="fcard" href="dig://urn:dig:chia:1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907/index.html">
+          <div class="row"><div class="well">&#127974;</div>
+            <div><div class="nm">XCH Annuity</div><div class="sid">1426d906&hellip;359907</div></div></div>
           <p class="ds">Private, self-custodial annuities &mdash; a legacy secured by Chia.</p>
-          <span class="vchip"><span class="tick">&#10003;</span> Chia-verified</span>
+          <span class="vchip"><span>&#10003;</span> Chia-verified</span>
         </a>
-        <a class="store" href="https://hub.dig.net">
-          <div class="row"><div class="av">&#10133;</div>
-            <div><div class="nm">Publish your site</div><div class="sid">hub.dig.net</div></div></div>
-          <p class="ds">Turn any site into a verifiable dig:// store on the DIG Network.</p>
-          <span class="vchip" style="color:var(--faint);background:var(--card);border-color:var(--border)">Get started</span>
+        <a class="fcard" href="https://hub.dig.net/new">
+          <div class="row"><div class="well">&#10133;</div>
+            <div><div class="nm">Publish on DIGHUb</div><div class="sid">hub.dig.net</div></div></div>
+          <p class="ds">Publish like you push code &mdash; init, add, commit, push. Your wallet is your account.</p>
+          <span class="vchip ghost">New project &rarr;</span>
         </a>
       </div>
     </section>
   </main>
 
   <footer>
-    <span class="trust">
-      <span class="seal"><span class="d"></span>Secured by Chia</span>
-      &middot; every dig:// page is Merkle-verified against its on-chain root and decrypted on this device.
-    </span>
+    <p class="trust"><span class="seal">Built on Chia</span> &middot; Censorship-resistant &middot; Permanent
+      &mdash; every dig:// page is <b>Merkle-verified</b> against its on-chain root and decrypted on this device.</p>
   </footer>
 
   <script>
     (function () {
-      var form = document.getElementById('omni');
-      var q = document.getElementById('q');
-      var mode = document.getElementById('mode');
-      var lead = document.getElementById('lead');
-      var goBtn = document.getElementById('goBtn');
-
-      // Classify input: dig (DIG Network), url (web address), or search.
-      function classify(v) {
-        v = v.trim();
-        if (!v) return 'search';
-        if (/^dig:\/\//i.test(v) || /^urn:dig:/i.test(v)) return 'dig';
-        // bare 64-hex store id, optionally :root and/or /path
-        if (/^[0-9a-f]{64}([:\/].*)?$/i.test(v)) return 'dig';
-        if (/^https?:\/\//i.test(v)) return 'url';
-        // looks like a domain (has a dot, no spaces)
-        if (/^[^\s]+\.[^\s]{2,}([\/?#].*)?$/.test(v) && !/\s/.test(v)) return 'url';
+      var form=document.getElementById('omni'), q=document.getElementById('q'),
+          mode=document.getElementById('mode'), lead=document.getElementById('lead'), goBtn=document.getElementById('goBtn');
+      function classify(v){
+        v=v.trim(); if(!v) return 'search';
+        if(/^dig:\/\//i.test(v)||/^urn:dig:/i.test(v)) return 'dig';
+        if(/^[0-9a-f]{64}([:\/].*)?$/i.test(v)) return 'dig';
+        if(/^https?:\/\//i.test(v)) return 'url';
+        if(/^[^\s]+\.[^\s]{2,}([\/?#].*)?$/.test(v)&&!/\s/.test(v)) return 'url';
         return 'search';
       }
-      function reflect() {
-        var k = classify(q.value);
-        if (k === 'dig') {
-          mode.className = 'mode dig';
-          mode.innerHTML = 'Opens on the <b>DIG Network</b> &mdash; verified on Chia';
-          lead.innerHTML = '&#9670;'; goBtn.textContent = 'Open';
-        } else if (k === 'url') {
-          mode.className = 'mode';
-          mode.innerHTML = 'Go to <b>' + q.value.trim().replace(/[<>&]/g,'') + '</b>';
-          lead.innerHTML = '&#127760;'; goBtn.textContent = 'Go';
-        } else {
-          mode.className = 'mode';
-          mode.innerHTML = 'Tip: paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network';
-          lead.innerHTML = '&#128269;'; goBtn.textContent = 'Search';
-        }
+      function reflect(){
+        var k=classify(q.value);
+        if(k==='dig'){mode.className='mode dig';mode.innerHTML='Opens on the <b>DIG Network</b> &mdash; verified on Chia';lead.innerHTML='&#9670;';goBtn.textContent='Open';}
+        else if(k==='url'){mode.className='mode';mode.innerHTML='Go to <b>'+q.value.trim().replace(/[<>&]/g,'')+'</b>';lead.innerHTML='&#127760;';goBtn.textContent='Go';}
+        else{mode.className='mode';mode.innerHTML='Paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network';lead.innerHTML='&#128269;';goBtn.textContent='Search';}
       }
-      q.addEventListener('input', reflect);
-
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var v = (q.value || '').trim();
-        if (!v) return;
-        var k = classify(v);
-        if (k === 'dig') {
-          v = v.replace(/^dig:\/\//i, '').replace(/^urn:dig:/i, '');
-          location.href = 'dig://' + v;
-        } else if (k === 'url') {
-          location.href = /^https?:\/\//i.test(v) ? v : 'https://' + v;
-        } else {
-          location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(v);
-        }
+      q.addEventListener('input',reflect);
+      form.addEventListener('submit',function(e){
+        e.preventDefault(); var v=(q.value||'').trim(); if(!v) return; var k=classify(v);
+        if(k==='dig'){v=v.replace(/^dig:\/\//i,'').replace(/^urn:dig:/i,'');location.href='dig://'+v;}
+        else if(k==='url'){location.href=/^https?:\/\//i.test(v)?v:'https://'+v;}
+        else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}
       });
-
-      // Wallet entry points open the native DIG wallet (chrome page wired by the
-      // browser; falls back to the project page until the wallet panel ships).
-      function openWallet(e){ if(e) e.preventDefault(); location.href = 'dig://wallet'; }
-      document.getElementById('wallet').addEventListener('click', openWallet);
-      document.getElementById('qaWallet').addEventListener('click', openWallet);
+      function openWallet(e){if(e)e.preventDefault();location.href='dig://wallet';}
+      document.getElementById('wallet').addEventListener('click',openWallet);
+      document.getElementById('qaWallet').addEventListener('click',openWallet);
     })();
   </script>
 </body>
