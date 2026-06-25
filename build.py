@@ -110,41 +110,69 @@ def _apply_dig_branding(source_tree):
             shutil.copy2(logo256, dst_dir / 'dig_logo_256.png')
         get_logger().info('DIG branding: new-tab page installed')
 
-    # Rebrand the user-visible product/company strings in chromium_strings.grd.
-    # Done as a tolerant text substitution (rather than a line-anchored quilt
-    # hunk) so it survives Chromium rebases that move these <message> elements.
-    grd = source_tree / 'chrome' / 'app' / 'chromium_strings.grd'
-    if grd.exists():
+    # Rebrand EVERY user-visible product/company string so "Chromium" appears on
+    # no screen. Chromium keeps these in chrome/app/chromium_strings.grd and its
+    # settings_chromium_strings.grdp part (chrome://settings, the About page,
+    # menus, etc.). We substitute inside <message> BODIES only (the text between
+    # the opening tag's '>' and '</message>') — never in name=/desc= attributes —
+    # so grit IDs and translator metadata stay intact. Word-boundary, specific
+    # terms only; a tolerant text pass that survives Chromium rebases. 'Chrome'
+    # standalone is intentionally left alone here (Chrome Web Store, the UA token,
+    # chrome:// references); targeted 'Chrome' phrases are handled separately.
+    brand_subs = [
+        (re.compile(r'\bThe Chromium Authors\b'), 'The DIG Network'),
+        (re.compile(r'\bThe Chromium Projects\b'), 'The DIG Network'),
+        (re.compile(r'\bGoogle Chrome\b'), 'DIG Browser'),
+        (re.compile(r'\bChromium\b'), 'DIG Browser'),
+    ]
+    msg_re = re.compile(r'(<message\b[^>]*>)(.*?)(</message>)', re.DOTALL)
+
+    def _rebrand_grd(path):
+        if not path.exists():
+            get_logger().warning('DIG branding: grd not found: %s', path)
+            return
         try:
-            text = grd.read_text(encoding=ENCODING)
-            subs = [
-                ('name="IDS_PRODUCT_NAME"', 'Chromium', 'DIG Browser'),
-                ('name="IDS_SHORTCUT_NAME"', 'Chromium', 'DIG Browser'),
-                ('name="IDS_ABOUT_VERSION_COMPANY_NAME"',
-                 'The Chromium Authors', 'DIG Network'),
-            ]
-            changed = False
-            for anchor, old, new in subs:
-                # Replace `>old<` only within the message element that carries
-                # `anchor`, so we don't touch unrelated occurrences.
-                idx = text.find(anchor)
-                if idx == -1:
-                    get_logger().warning('DIG branding: grd anchor not found: %s', anchor)
-                    continue
-                end = text.find('</message>', idx)
-                if end == -1:
-                    continue
-                segment = text[idx:end]
-                needle = '>' + old + '<'
-                if needle in segment:
-                    segment = segment.replace(needle, '>' + new + '<', 1)
-                    text = text[:idx] + segment + text[end:]
-                    changed = True
-            if changed:
-                grd.write_text(text, encoding=ENCODING)
-                get_logger().info('DIG branding: rebranded chromium_strings.grd')
+            text = path.read_text(encoding=ENCODING)
+
+            def _sub_msg(m):
+                body = m.group(2)
+                for rx, rep in brand_subs:
+                    body = rx.sub(rep, body)
+                return m.group(1) + body + m.group(3)
+
+            new_text = msg_re.sub(_sub_msg, text)
+            if new_text != text:
+                path.write_text(new_text, encoding=ENCODING)
+                get_logger().info('DIG branding: rebranded %s', path.name)
         except Exception as exc:  # best-effort, never fail the build on this
-            get_logger().warning('DIG branding: grd substitution skipped (%s)', exc)
+            get_logger().warning('DIG branding: grd rebrand skipped for %s (%s)', path.name, exc)
+
+    # Sweep EVERY grd/grdp under chrome/ and components/ so no user-visible
+    # surface (settings, About, menus, the omnibox + its pedals, page info,
+    # interstitials, etc.) is left saying "Chromium". The sub only rewrites
+    # <message> bodies and only the brand terms, so files without them are
+    # untouched; word boundaries leave "ChromiumOS" (ChromeOS, not built here)
+    # and technical "Chrome" tokens alone.
+    for base in ('chrome', 'components'):
+        base_dir = source_tree / base
+        if not base_dir.exists():
+            continue
+        for grd in list(base_dir.rglob('*.grd')) + list(base_dir.rglob('*.grdp')):
+            _rebrand_grd(grd)
+
+    # Rebrand the residual hardcoded "Google Chrome"/"The Chromium Authors" in the
+    # BRANDING file's COPYRIGHT line (feeds the About-box copyright + VERSIONINFO).
+    branding_file = app_dir / 'theme' / 'chromium' / 'BRANDING'
+    if branding_file.exists():
+        try:
+            bt = branding_file.read_text(encoding=ENCODING)
+            nb = (bt.replace('The Chromium Authors', 'The DIG Network')
+                    .replace('The Chromium Projects', 'The DIG Network'))
+            if nb != bt:
+                branding_file.write_text(nb, encoding=ENCODING)
+                get_logger().info('DIG branding: rebranded BRANDING copyright')
+        except Exception as exc:  # best-effort
+            get_logger().warning('DIG branding: BRANDING rebrand skipped (%s)', exc)
 
 
 def _get_vcvars_path(name='64'):
