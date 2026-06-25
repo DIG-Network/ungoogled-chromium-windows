@@ -81,6 +81,35 @@
        (static_cast<int>(text.length()) > after_scheme_and_colon)) {
      // Obtain the URL prefixed by view-source or blob and parse it.
      std::u16string real_url(text.substr(after_scheme_and_colon));
+--- a/components/omnibox/browser/location_bar_model_impl.cc
++++ b/components/omnibox/browser/location_bar_model_impl.cc
+@@ -27,6 +27,7 @@
+ #include "ui/gfx/text_elider.h"
+ #include "ui/gfx/vector_icon_types.h"
+ #include "url/origin.h"
++#include "url/url_constants.h"
+ 
+ #if (!BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_VR)) && !BUILDFLAG(IS_IOS)
+ #include "components/omnibox/browser/vector_icons.h"  // nogncheck
+@@ -223,6 +224,18 @@
+   if (IsOfflinePage())
+     return l10n_util::GetStringUTF16(IDS_OFFLINE_VERBOSE_STATE);
+ 
++  // DIG: a dig:// page that rendered content was Merkle-verified against its
++  // on-chain root (the loader fails closed, showing an error otherwise), so
++  // surface that trust as an omnibox chip no other browser can show. The
++  // internal home/wallet pages are local, not chain content.
++  {
++    const GURL url = GetURL();
++    if (url.SchemeIs(url::kDigScheme) && url.host_piece() != "home" &&
++        url.host_piece() != "wallet") {
++      return u"Verified on Chia";
++    }
++  }
++
+   switch (GetSecurityLevel()) {
+     case security_state::WARNING:
+       return l10n_util::GetStringUTF16(IDS_NOT_SECURE_VERBOSE_STATE);
 --- a/components/url_formatter/url_fixer.cc
 +++ b/components/url_formatter/url_fixer.cc
 @@ -15,6 +15,8 @@
