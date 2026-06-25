@@ -221,6 +221,36 @@ def _make_tmp_paths():
         tmp_path.mkdir()
 
 
+def _stage_dig_runtime(out_dir):
+    """Build + stage the native in-process DIG runtime DLL next to the browser.
+
+    dig_runtime.dll is a cargo-built cdylib (the sibling `digstore` submodule's
+    `dig-runtime` crate). The browser loads it at startup (chrome_browser_main's
+    PostBrowserStart) and runs the DIG node — dig:// serving + chain-anchored
+    root resolution — on its own threads INSIDE the browser process, so there is
+    NO dig-node.exe sidecar. We build it from the sibling crate and copy it next
+    to dig.exe. Best-effort: if cargo or the crate is unavailable the browser
+    still builds (dig:// just won't serve until the DLL is present).
+    """
+    digstore = _ROOT_DIR.parent / 'digstore'
+    if not (digstore / 'crates' / 'dig-runtime' / 'Cargo.toml').exists():
+        get_logger().warning(
+            'dig-runtime crate not found at %s; skipping DIG runtime DLL', digstore)
+        return
+    try:
+        subprocess.run(['cargo', 'build', '-p', 'dig-runtime', '--release'],
+                       cwd=str(digstore), check=True)
+    except Exception as exc:  # noqa: BLE001 — best-effort packaging step
+        get_logger().warning('dig-runtime build failed (%s); skipping DIG runtime DLL', exc)
+        return
+    dll = digstore / 'target' / 'release' / 'dig_runtime.dll'
+    if dll.exists():
+        shutil.copy2(dll, out_dir / 'dig_runtime.dll')
+        get_logger().info('Staged native DIG runtime DLL: %s', out_dir / 'dig_runtime.dll')
+    else:
+        get_logger().warning('dig_runtime.dll missing at %s after build', dll)
+
+
 def main():
     """CLI Entrypoint"""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -464,6 +494,9 @@ def main():
             dig_exe.unlink()
         built_exe.rename(dig_exe)
         get_logger().info('Renamed browser executable to %s', dig_exe)
+
+    # Stage the native in-process DIG runtime DLL beside dig.exe (no sidecar).
+    _stage_dig_runtime(out_dir)
 
 
 if __name__ == '__main__':
