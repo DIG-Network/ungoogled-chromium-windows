@@ -561,7 +561,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,636 @@
+@@ -0,0 +1,702 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -850,14 +850,77 @@
 +      return;
 +    }
 +    // Rootless dig:// — resolve the store's CURRENT singleton-tip root
-+    // (chain-anchored, via the dig-resolver sidecar over coinset.org) and verify
-+    // the served content against THAT root, never the serving node's claim.
-+    // Cached per store so the page's subresources don't each re-resolve.
++    // (chain-anchored, from coinset.org) and verify the served content against
++    // THAT root, never the serving node's claim. Cached per store so the page's
++    // subresources don't each re-resolve.
 +    if (std::optional<std::string> cached = GetCachedRoot(parsed_.store_id)) {
 +      root_ = *cached;
 +      StartRpcWindow(0);
 +      return;
 +    }
++    // Resolve via the local dig-node (dig.getAnchoredRoot) over the same HTTP
++    // endpoint we fetch content from. This replaces spawning the dig-resolver
++    // subprocess, which the browser-process sandbox blocks (GetAppOutput fails),
++    // and reuses the node the browser already depends on. The subprocess remains
++    // only as a last-resort fallback.
++    StartRootResolve();
++  }
++
++  // POST dig.getAnchoredRoot to the local dig-node to resolve a rootless URN's
++  // chain-anchored tip root.
++  void StartRootResolve() {
++    GURL endpoint(net::DigProtocolHandler::GetRpcEndpoint());
++    if (!endpoint.is_valid()) {
++      FallbackResolveRoot();
++      return;
++    }
++    base::Value::Dict params;
++    params.Set("store_id", parsed_.store_id);
++    base::Value::Dict body;
++    body.Set("jsonrpc", "2.0");
++    body.Set("id", 1);
++    body.Set("method", "dig.getAnchoredRoot");
++    body.Set("params", std::move(params));
++    std::string json;
++    base::JSONWriter::Write(base::Value(std::move(body)), &json);
++
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = endpoint;
++    request->method = "POST";
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    request->headers.SetHeader("Content-Type", "application/json");
++    root_loader_ = network::SimpleURLLoader::Create(std::move(request),
++                                                    RpcTrafficAnnotation());
++    root_loader_->AttachStringForUpload(std::move(json), "application/json");
++    root_loader_->SetAllowHttpErrorResults(true);
++    root_loader_->DownloadToString(
++        network_loader_factory_.get(),
++        base::BindOnce(&DigURLLoader::OnNodeRootResolved,
++                       weak_factory_.GetWeakPtr()),
++        network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
++  }
++
++  void OnNodeRootResolved(std::optional<std::string> body) {
++    if (body) {
++      std::optional<base::Value> parsed = base::JSONReader::Read(*body);
++      if (parsed && parsed->is_dict()) {
++        if (const base::Value::Dict* result =
++                parsed->GetDict().FindDict("result")) {
++          const std::string* r = result->FindString("root");
++          if (r && r->size() == 64) {
++            OnRootResolved(*r);
++            return;
++          }
++        }
++      }
++    }
++    // dig-node couldn't resolve (down, or chain/coinset error) — last resort.
++    FallbackResolveRoot();
++  }
++
++  // Last-resort: the bundled dig-resolver subprocess (works outside the sandbox,
++  // e.g. when GetRpcEndpoint points at a non-local node that lacks getAnchoredRoot).
++  void FallbackResolveRoot() {
 +    base::ThreadPool::PostTaskAndReplyWithResult(
 +        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
 +        base::BindOnce(&RunTipResolver, parsed_.store_id),
@@ -1143,6 +1206,9 @@
 +  std::unique_ptr<network::SimpleURLLoader> rpc_loader_;
 +  std::string rpc_body_;
 +  int64_t current_offset_ = 0;
++
++  // Loader for the dig.getAnchoredRoot resolve of a rootless URN's tip root.
++  std::unique_ptr<network::SimpleURLLoader> root_loader_;
 +
 +  // Reassembly state.
 +  int64_t total_length_ = -1;
