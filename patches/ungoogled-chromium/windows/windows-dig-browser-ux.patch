@@ -741,7 +741,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,663 @@
+@@ -0,0 +1,676 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1000,6 +1000,19 @@
 +      output_ = kDigHomeHtml;
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
++      SendResponse();
++      return;
++    }
++    // dig://wallet opens the built-in Chia wallet, served in-process by the DIG
++    // runtime over loopback (an interactive web UI). Redirect to it.
++    if (url.host_piece() == "wallet") {
++      output_ =
++          "<!doctype html><meta charset=\"utf-8\">"
++          "<meta http-equiv=\"refresh\" content=\"0;url=http://127.0.0.1:9777/\">"
++          "<title>DIG Wallet</title>"
++          "<body style=\"margin:0;background:#0b0618\"></body>";
++      mime_type_ = "text/html";
++      verified_ = false;
 +      SendResponse();
 +      return;
 +    }
