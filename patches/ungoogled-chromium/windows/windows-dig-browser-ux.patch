@@ -190,23 +190,15 @@
      WebSecurityPolicy::RegisterURLSchemeAsCodeCacheWithHashing(
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -11,6 +11,7 @@
- 
- #include "base/at_exit.h"
- #include "base/base_switches.h"
-+#include "base/base_paths.h"
- #include "base/check.h"
- #include "base/command_line.h"
- #include "base/files/file_path.h"
-@@ -18,6 +19,7 @@
- #include "base/memory/raw_ptr.h"
+@@ -19,6 +19,7 @@
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/histogram_macros.h"
-+#include "base/native_library.h"
  #include "base/path_service.h"
++#include "chrome/browser/dig/dig_native_runtime.h"
  #include "base/task/current_thread.h"
  #include "base/task/single_thread_task_runner.h"
-@@ -1005,6 +1007,7 @@
+ #include "base/task/thread_pool.h"
+@@ -1005,6 +1006,7 @@
    if (first_run::IsChromeFirstRun()) {
      if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
          !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
@@ -214,57 +206,19 @@
        browser_creator_->AddFirstRunTabs(master_prefs_->new_tabs);
      }
    }
-@@ -1340,11 +1343,49 @@
-   g_browser_process->fingerprinting_protection_ruleset_service();
- }
- 
-+namespace {
-+
-+#if BUILDFLAG(IS_WIN)
-+// DIG: start the native in-process DIG runtime. dig_runtime.dll ships next to the
-+// browser executable (like chrome.dll) and runs the DIG node — dig:// content
-+// serving + chain-anchored root resolution — on its own threads INSIDE the
-+// browser process. There is NO dig-node sidecar process. Best-effort: if the DLL
-+// is missing the browser still runs (dig:// just can't serve until it's present).
-+// The library is intentionally never unloaded: the runtime lives for the whole
-+// browser session.
-+void StartDigNativeRuntime() {
-+  base::FilePath exe_dir;
-+  if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) {
-+    return;
-+  }
-+  base::NativeLibraryLoadError error;
-+  base::NativeLibrary lib = base::LoadNativeLibrary(
-+      exe_dir.AppendASCII("dig_runtime.dll"), &error);
-+  if (!lib) {
-+    return;
-+  }
-+  using DigRuntimeStartFn = void (*)();
-+  auto* start = reinterpret_cast<DigRuntimeStartFn>(
-+      base::GetFunctionPointerFromNativeLibrary(lib, "dig_runtime_start"));
-+  if (start) {
-+    start();
-+  }
-+  // Leak `lib` on purpose — the DIG runtime threads run for the browser's life.
-+}
-+#endif  // BUILDFLAG(IS_WIN)
-+
-+}  // namespace
-+
- void ChromeBrowserMainParts::PostBrowserStart() {
-   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostBrowserStart");
+@@ -1345,6 +1347,11 @@
    for (auto& chrome_extra_part : chrome_extra_parts_)
      chrome_extra_part->PostBrowserStart();
  
-+#if BUILDFLAG(IS_WIN)
-+  // DIG: bring up the native in-process DIG runtime (no sidecar).
-+  StartDigNativeRuntime();
-+#endif
++  // DIG: bring up the native in-process DIG runtime — the browser process IS the
++  // DIG node (dig_runtime.dll loaded in-process, called directly via FFI). No
++  // loopback server, no dig-node.exe sidecar.
++  dig::StartNativeRuntime();
 +
    browser_process_->browser_policy_connector()->OnBrowserStarted();
  
  #if BUILDFLAG(ENABLE_PROCESS_SINGLETON)
-@@ -1582,11 +1623,6 @@
+@@ -1582,11 +1589,6 @@
    // and preferences have been registered since some of the import code depends
    // on preferences.
    if (first_run::IsChromeFirstRun()) {
@@ -539,13 +493,15 @@
      "//components/security_interstitials/content:security_interstitial_page",
 --- /dev/null
 +++ b/chrome/browser/dig/BUILD.gn
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,21 @@
 +# Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
 +
 +source_set("dig") {
 +  sources = [
++    "dig_native_runtime.cc",
++    "dig_native_runtime.h",
 +    "dig_url_loader_factory.cc",
 +    "dig_url_loader_factory.h",
 +  ]
@@ -559,6 +515,133 @@
 +    "//url",
 +  ]
 +}
+--- /dev/null
++++ b/chrome/browser/dig/dig_native_runtime.h
+@@ -0,0 +1,29 @@
++// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_DIG_DIG_NATIVE_RUNTIME_H_
++#define CHROME_BROWSER_DIG_DIG_NATIVE_RUNTIME_H_
++
++#include <string>
++
++// The DIG browser process IS the DIG node. dig_runtime.dll (a cargo cdylib
++// shipped next to the browser executable) is loaded in-process and its
++// dig_rpc(request_json) -> response_json entrypoint is called DIRECTLY — there
++// is no loopback server and no dig-node.exe sidecar.
++namespace dig {
++
++// Load dig_runtime.dll (next to the browser executable) and start the native
++// in-process DIG runtime. Call once at browser startup, on the UI thread.
++// Best-effort: a no-op if the DLL is absent (dig:// simply can't serve yet).
++void StartNativeRuntime();
++
++// Execute one DIG JSON-RPC request in-process (dig_rpc) and return the JSON
++// response, or an empty string on failure. BLOCKING — drives the request to
++// completion on the runtime's threads — so call ONLY from a thread allowed to
++// block (a base::MayBlock task), never the UI/IO thread. Thread-safe.
++std::string CallDigRpc(const std::string& request_json);
++
++}  // namespace dig
++
++#endif  // CHROME_BROWSER_DIG_DIG_NATIVE_RUNTIME_H_
+--- /dev/null
++++ b/chrome/browser/dig/dig_native_runtime.cc
+@@ -0,0 +1,92 @@
++// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/dig/dig_native_runtime.h"
++
++#include "base/base_paths.h"
++#include "base/files/file_path.h"
++#include "base/native_library.h"
++#include "base/no_destructor.h"
++#include "base/path_service.h"
++#include "base/synchronization/lock.h"
++
++namespace dig {
++namespace {
++
++// C-ABI exported by dig_runtime.dll (see crates/dig-runtime).
++using DigRuntimeStartFn = void (*)();
++using DigRpcFn = char* (*)(const char*);
++using DigFreeFn = void (*)(char*);
++
++struct DigRuntimeLib {
++  DigRuntimeStartFn start = nullptr;
++  DigRpcFn rpc = nullptr;
++  DigFreeFn free_fn = nullptr;
++  bool attempted = false;
++};
++
++DigRuntimeLib& Lib() {
++  // Trivially destructible (just function pointers + a flag), so a plain
++  // function-local static is correct here (base::NoDestructor rejects trivial T).
++  static DigRuntimeLib lib;
++  return lib;
++}
++
++base::Lock& LoadLock() {
++  static base::NoDestructor<base::Lock> lock;
++  return *lock;
++}
++
++// Resolve dig_runtime.dll + its exports exactly once (thread-safe). The library
++// is intentionally never unloaded — the DIG runtime runs for the browser's life.
++void EnsureLoaded() {
++  base::AutoLock guard(LoadLock());
++  DigRuntimeLib& lib = Lib();
++  if (lib.attempted) {
++    return;
++  }
++  lib.attempted = true;
++  base::FilePath exe_dir;
++  if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) {
++    return;
++  }
++  base::NativeLibraryLoadError error;
++  base::NativeLibrary native = base::LoadNativeLibrary(
++      exe_dir.AppendASCII("dig_runtime.dll"), &error);
++  if (!native) {
++    return;
++  }
++  lib.start = reinterpret_cast<DigRuntimeStartFn>(
++      base::GetFunctionPointerFromNativeLibrary(native, "dig_runtime_start"));
++  lib.rpc = reinterpret_cast<DigRpcFn>(
++      base::GetFunctionPointerFromNativeLibrary(native, "dig_rpc"));
++  lib.free_fn = reinterpret_cast<DigFreeFn>(
++      base::GetFunctionPointerFromNativeLibrary(native, "dig_free"));
++}
++
++}  // namespace
++
++void StartNativeRuntime() {
++  EnsureLoaded();
++  if (Lib().start) {
++    Lib().start();
++  }
++}
++
++std::string CallDigRpc(const std::string& request_json) {
++  EnsureLoaded();
++  DigRuntimeLib& lib = Lib();
++  if (!lib.rpc || !lib.free_fn) {
++    return std::string();
++  }
++  char* out = lib.rpc(request_json.c_str());
++  if (!out) {
++    return std::string();
++  }
++  std::string result(out);
++  lib.free_fn(out);
++  return result;
++}
++
++}  // namespace dig
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.h
 @@ -0,0 +1,88 @@
@@ -652,12 +735,14 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,702 @@
+@@ -0,0 +1,651 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/dig/dig_url_loader_factory.h"
++
++#include "chrome/browser/dig/dig_native_runtime.h"
 +
 +#include <algorithm>
 +#include <cstdint>
@@ -843,25 +928,6 @@
 +      "</div></body></html>"});
 +}
 +
-+net::NetworkTrafficAnnotationTag RpcTrafficAnnotation() {
-+  return net::DefineNetworkTrafficAnnotation("dig_url_loader_get_content", R"(
-+      semantics {
-+        sender: "DIG URL Loader"
-+        description:
-+          "Fetches encrypted DIG Network content by retrieval key from the "
-+          "configured DIG JSON-RPC read endpoint when the user navigates to a "
-+          "dig:// URL. The response is verified (Merkle inclusion proof) and "
-+          "decrypted entirely on the client; the server only ever sees "
-+          "ciphertext keyed by a hash."
-+        trigger: "User navigates to or loads a dig:// resource."
-+        data: "A retrieval key (hash), store id, root, and byte range."
-+        destination: WEBSITE
-+      }
-+      policy {
-+        cookies_allowed: NO
-+        setting: "Configurable via the DIG RPC endpoint setting."
-+      })");
-+}
 +
 +// ---------------------------------------------------------------------------
 +// DigURLLoader: self-owned network::mojom::URLLoader that drives the
@@ -957,14 +1023,10 @@
 +    StartRootResolve();
 +  }
 +
-+  // POST dig.getAnchoredRoot to the local dig-node to resolve a rootless URN's
-+  // chain-anchored tip root.
++  // Resolve a rootless URN's chain-anchored tip root by calling the in-process
++  // DIG runtime (dig.getAnchoredRoot) DIRECTLY via FFI on a MayBlock thread —
++  // the browser process IS the node, so there is no loopback server to POST to.
 +  void StartRootResolve() {
-+    GURL endpoint(net::DigProtocolHandler::GetRpcEndpoint());
-+    if (!endpoint.is_valid()) {
-+      FallbackResolveRoot();
-+      return;
-+    }
 +    base::Value::Dict params;
 +    params.Set("store_id", parsed_.store_id);
 +    base::Value::Dict body;
@@ -974,26 +1036,16 @@
 +    body.Set("params", std::move(params));
 +    std::string json;
 +    base::JSONWriter::Write(base::Value(std::move(body)), &json);
-+
-+    auto request = std::make_unique<network::ResourceRequest>();
-+    request->url = endpoint;
-+    request->method = "POST";
-+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-+    request->headers.SetHeader("Content-Type", "application/json");
-+    root_loader_ = network::SimpleURLLoader::Create(std::move(request),
-+                                                    RpcTrafficAnnotation());
-+    root_loader_->AttachStringForUpload(std::move(json), "application/json");
-+    root_loader_->SetAllowHttpErrorResults(true);
-+    root_loader_->DownloadToString(
-+        network_loader_factory_.get(),
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
++        base::BindOnce(&dig::CallDigRpc, std::move(json)),
 +        base::BindOnce(&DigURLLoader::OnNodeRootResolved,
-+                       weak_factory_.GetWeakPtr()),
-+        network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
++                       weak_factory_.GetWeakPtr()));
 +  }
 +
-+  void OnNodeRootResolved(std::optional<std::string> body) {
-+    if (body) {
-+      std::optional<base::Value> parsed = base::JSONReader::Read(*body);
++  void OnNodeRootResolved(std::string body) {
++    if (!body.empty()) {
++      std::optional<base::Value> parsed = base::JSONReader::Read(body);
 +      if (parsed && parsed->is_dict()) {
 +        if (const base::Value::Dict* result =
 +                parsed->GetDict().FindDict("result")) {
@@ -1005,12 +1057,12 @@
 +        }
 +      }
 +    }
-+    // dig-node couldn't resolve (down, or chain/coinset error) — last resort.
++    // The in-process runtime couldn't resolve (chain/coinset error) — last resort.
 +    FallbackResolveRoot();
 +  }
 +
-+  // Last-resort: the bundled dig-resolver subprocess (works outside the sandbox,
-+  // e.g. when GetRpcEndpoint points at a non-local node that lacks getAnchoredRoot).
++  // Last-resort: the bundled dig-resolver subprocess. Rarely needed now that the
++  // in-process runtime resolves directly; kept for resilience.
 +  void FallbackResolveRoot() {
 +    base::ThreadPool::PostTaskAndReplyWithResult(
 +        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
@@ -1032,12 +1084,6 @@
 +  }
 +
 +  void StartRpcWindow(int64_t offset) {
-+    GURL endpoint(net::DigProtocolHandler::GetRpcEndpoint());
-+    if (!endpoint.is_valid()) {
-+      FinishWithError("DIG RPC endpoint is misconfigured.");
-+      return;
-+    }
-+
 +    // Build the JSON-RPC 2.0 dig.getContent request body.
 +    base::Value::Dict params;
 +    params.Set("store_id", parsed_.store_id);
@@ -1055,33 +1101,22 @@
 +    std::string json;
 +    base::JSONWriter::Write(base::Value(std::move(body)), &json);
 +
-+    auto request = std::make_unique<network::ResourceRequest>();
-+    request->url = endpoint;
-+    request->method = "POST";
-+    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-+    request->headers.SetHeader("Content-Type", "application/json");
-+
 +    current_offset_ = offset;
-+    // Fresh SimpleURLLoader per window (each loader serves a single request).
-+    rpc_loader_ = network::SimpleURLLoader::Create(std::move(request),
-+                                                   RpcTrafficAnnotation());
-+    rpc_loader_->AttachStringForUpload(std::move(json), "application/json");
-+    // Accept non-2xx bodies so an RPC-level JSON error is still parsed (and
-+    // surfaced as a branded error) rather than dropped.
-+    rpc_loader_->SetAllowHttpErrorResults(true);
-+    rpc_loader_->DownloadToString(
-+        network_loader_factory_.get(),
++    // Call the in-process DIG runtime DIRECTLY via FFI on a MayBlock thread —
++    // the browser process IS the node. No SimpleURLLoader, no loopback server.
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
++        base::BindOnce(&dig::CallDigRpc, std::move(json)),
 +        base::BindOnce(&DigURLLoader::OnRpcWindowDownloaded,
-+                       weak_factory_.GetWeakPtr()),
-+        network::SimpleURLLoader::kMaxBoundedStringDownloadSize);
++                       weak_factory_.GetWeakPtr()));
 +  }
 +
-+  void OnRpcWindowDownloaded(std::optional<std::string> response_body) {
-+    if (!response_body) {
++  void OnRpcWindowDownloaded(std::string response_body) {
++    if (response_body.empty()) {
 +      FinishWithError("Couldn't reach the DIG content network.");
 +      return;
 +    }
-+    rpc_body_ = std::move(*response_body);
++    rpc_body_ = std::move(response_body);
 +    HandleRpcWindowComplete();
 +  }
 +
@@ -1159,7 +1194,6 @@
 +  }
 +
 +  void FinishResolve() {
-+    rpc_loader_.reset();
 +
 +    // Verify the Merkle inclusion proof, then derive the key and decrypt.
 +    // Verification is required: a failed proof or a decrypt tag failure means
@@ -1193,7 +1227,6 @@
 +  }
 +
 +  void FinishWithError(const std::string& message) {
-+    rpc_loader_.reset();
 +    output_ = ErrorPageHtml(message);
 +    mime_type_ = "text/html";
 +    verified_ = false;
@@ -1269,7 +1302,6 @@
 +  }
 +
 +  void OnMojoDisconnect() {
-+    rpc_loader_.reset();
 +    data_producer_.reset();
 +    client_.reset();
 +    receiver_.reset();
@@ -1285,7 +1317,11 @@
 +  mojo::Receiver<network::mojom::URLLoader> receiver_{this};
 +  mojo::Remote<network::mojom::URLLoaderClient> client_;
 +
-+  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
++  // Captured at construction; retained for parity with the factory plumbing.
++  // The dig:// read path now calls the in-process DIG runtime directly (FFI),
++  // so this is no longer used for content fetches.
++  [[maybe_unused]] scoped_refptr<network::SharedURLLoaderFactory>
++      network_loader_factory_;
 +
 +  net::dig::ParsedUrn parsed_;
 +  std::string chain_;
@@ -1293,13 +1329,9 @@
 +  std::string root_;
 +  std::string retrieval_key_;
 +
-+  // Nested RPC state (a fresh loader per window).
-+  std::unique_ptr<network::SimpleURLLoader> rpc_loader_;
++  // The latest in-process RPC response body being reassembled.
 +  std::string rpc_body_;
 +  int64_t current_offset_ = 0;
-+
-+  // Loader for the dig.getAnchoredRoot resolve of a rootless URN's tip root.
-+  std::unique_ptr<network::SimpleURLLoader> root_loader_;
 +
 +  // Reassembly state.
 +  int64_t total_length_ = -1;
