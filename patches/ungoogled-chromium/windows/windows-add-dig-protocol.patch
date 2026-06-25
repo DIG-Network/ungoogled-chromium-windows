@@ -102,7 +102,7 @@
 +  {
 +    const GURL url = GetURL();
 +    if (url.SchemeIs(url::kDigScheme) && url.host_piece() != "home" &&
-+        url.host_piece() != "wallet") {
++        url.host_piece() != "wallet" && url.host_piece() != "settings") {
 +      // Append "local" when this device's DIG cache served the page (not
 +      // rpc.dig.net) — local-first is the preferred, faster path.
 +      return delegate_->IsCurrentPageDigLocal()
