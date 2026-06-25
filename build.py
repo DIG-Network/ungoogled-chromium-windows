@@ -68,6 +68,24 @@ def _apply_dig_branding(source_tree):
         else:
             get_logger().warning('DIG branding: skip %s (missing src or dst dir)', dst_name)
 
+    # The toolbar home button (the DIG coin, IDR_PRODUCT_LOGO_16) and several
+    # other UI surfaces load product_logo_16/32 through the chrome_scaled_image
+    # pak, which reads from the per-scale theme dirs (default_100_percent /
+    # default_200_percent), NOT chrome/app/theme/chromium. If we only overlay
+    # the latter, the home button falls back to the stock Chromium logo. Copy
+    # the DIG coin into both scale dirs too.
+    for scale in ('default_100_percent', 'default_200_percent'):
+        scale_theme = source_tree / 'chrome' / 'app' / 'theme' / scale / 'chromium'
+        for name in ('product_logo_16.png', 'product_logo_32.png'):
+            src = branding_dir / name
+            dst = scale_theme / name
+            if src.exists() and dst.parent.exists():
+                shutil.copy2(src, dst)
+                get_logger().info('DIG branding: %s/%s', scale, name)
+            else:
+                get_logger().warning(
+                    'DIG branding: skip %s/%s (missing src or dst dir)', scale, name)
+
     # Windows executable / taskbar icon. Chromium reads this multi-resolution
     # .ico for chrome.exe (chrome/app/chrome_exe.ver / chrome_dll.rc).
     ico_src = branding_dir / 'chrome.ico'

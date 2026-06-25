@@ -19,74 +19,159 @@
 
 --- a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
 +++ b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
-@@ -72,6 +72,7 @@ ChromeAutocompleteSchemeClassifier::GetI
+@@ -72,6 +72,8 @@
    if (base::IsStringASCII(scheme) &&
        (ProfileIOData::IsHandledProtocol(scheme) ||
         base::EqualsCaseInsensitiveASCII(scheme, content::kViewSourceScheme) ||
 +       base::EqualsCaseInsensitiveASCII(scheme, url::kDigScheme) ||
++       base::EqualsCaseInsensitiveASCII(scheme, url::kTraceScheme) ||
         base::EqualsCaseInsensitiveASCII(scheme, url::kJavaScriptScheme) ||
         base::EqualsCaseInsensitiveASCII(scheme, url::kDataScheme))) {
      return metrics::OmniboxInputType::URL;
 --- a/chrome/browser/history/history_utils.cc
 +++ b/chrome/browser/history/history_utils.cc
-@@ -22,6 +22,7 @@ bool CanAddURLToHistory(const GURL& url)
+@@ -22,6 +22,8 @@
        url.SchemeIs(content::kChromeUIScheme) ||
        url.SchemeIs(content::kChromeUIUntrustedScheme) ||
        url.SchemeIs(content::kViewSourceScheme) ||
 +      url.SchemeIs(url::kDigScheme) ||
++      url.SchemeIs(url::kTraceScheme) ||
        url.SchemeIs(chrome::kChromeNativeScheme) ||
        url.SchemeIs(chrome::kChromeSearchScheme) ||
        url.SchemeIs(dom_distiller::kDomDistillerScheme))
 --- a/chrome/browser/ui/singleton_tabs.cc
 +++ b/chrome/browser/ui/singleton_tabs.cc
-@@ -132,7 +132,8 @@ int GetIndexOfExistingTab(Browser* brows
+@@ -132,7 +132,9 @@
      // RewriteURLIfNecessary removes the "view-source:" scheme which could lead
      // to incorrect matching, so ensure that the target and the candidate are
      // either both view-source:, or neither is.
 -    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source) {
 +    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
++        tab_url.SchemeIs(url::kTraceScheme) ||
 +        tab_url.SchemeIs(url::kDigScheme)) {
        continue;
      }
  
 --- a/components/omnibox/browser/autocomplete_input.cc
 +++ b/components/omnibox/browser/autocomplete_input.cc
-@@ -578,7 +578,8 @@ void AutocompleteInput::ParseForEmphasiz
+@@ -304,6 +304,15 @@
+     return metrics::OmniboxInputType::UNKNOWN;
+   }
+ 
++  // A full DIG URN typed as "urn:dig:..." is a navigable DIG address (it is
++  // rewritten to the dig: shorthand by the URL fixer). Classify it as a URL so
++  // the omnibox navigates instead of treating the colon-laden URN as a search.
++  if (base::EqualsCaseInsensitiveASCII(parsed_scheme_utf8, url::kUrnScheme) &&
++      base::StartsWith(text, u"urn:dig:",
++                       base::CompareCase::INSENSITIVE_ASCII)) {
++    return metrics::OmniboxInputType::URL;
++  }
++
+   // If the user typed a scheme, and it's HTTP or HTTPS, we know how to parse it
+   // well enough that we can fall through to the heuristics below.  If it's
+   // something else, we can just determine our action based on what we do with
+@@ -578,7 +587,9 @@
    // For the view-source and blob schemes, we should emphasize the host of the
    // URL qualified by the view-source or blob prefix.
    if ((base::EqualsCaseInsensitiveASCII(scheme_str, kViewSourceScheme) ||
 -       base::EqualsCaseInsensitiveASCII(scheme_str, url::kBlobScheme)) &&
 +       base::EqualsCaseInsensitiveASCII(scheme_str, url::kBlobScheme) ||
++       base::EqualsCaseInsensitiveASCII(scheme_str, url::kTraceScheme) ||
 +       base::EqualsCaseInsensitiveASCII(scheme_str, url::kDigScheme)) &&
        (static_cast<int>(text.length()) > after_scheme_and_colon)) {
      // Obtain the URL prefixed by view-source or blob and parse it.
      std::u16string real_url(text.substr(after_scheme_and_colon));
 --- a/components/url_formatter/url_fixer.cc
 +++ b/components/url_formatter/url_fixer.cc
-@@ -602,6 +602,10 @@ GURL FixupURLInternal(const std::string&
+@@ -15,6 +15,8 @@
+ #include <string_view>
+ 
+ #include "base/check_op.h"
++#include "base/containers/contains.h"
++#include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/i18n/char_iterator.h"
+@@ -25,6 +27,7 @@
+ #include "build/build_config.h"
+ #include "components/url_formatter/url_formatter.h"
+ #include "net/base/filename_util.h"
++#include "net/url_request/dig_urn.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "url/third_party/mozilla/url_parse.h"
+ #include "url/url_file.h"
+@@ -602,6 +605,36 @@
      }
    }
  
-+  if (scheme == url::kDigScheme) {
++  if (scheme == url::kTraceScheme) {
++    return GURL();
++  }
++
++  // Canonicalize any user-typed DIG address — urn:dig:..., dig:urn:dig:...,
++  // or dig://<chain>:<store>[:<root>]/<res> — to the host-bearing form
++  // dig://[<root>.]<store_id>/<resource>. That host form parses as a standard
++  // URL and makes relative subresources resolve against the same store/root.
++  // Missing root => latest; missing resource => index.html.
++  if ((scheme == url::kUrnScheme &&
++       base::StartsWith(trimmed, "urn:dig:",
++                        base::CompareCase::INSENSITIVE_ASCII)) ||
++      scheme == url::kDigScheme) {
++    net::dig::ParsedUrn p = net::dig::ParseDigUrn(trimmed);
++    if (p.valid) {
++      std::string host = p.root_hash.has_value()
++                             ? (*p.root_hash + "." + p.store_id)
++                             : p.store_id;
++      std::string canonical =
++          "dig://" + host + "/" +
++          (p.resource_key.empty() ? std::string("index.html") : p.resource_key);
++      if (p.salt.has_value()) {
++        canonical += "?salt=" + *p.salt;
++      }
++      return GURL(canonical);
++    }
++    // Already host-form (or unparseable): let standard parsing handle it.
 +    return GURL(text);
 +  }
 +
    // We handle the file scheme separately.
    if (scheme == url::kFileScheme) {
      return GURL(parts.scheme.is_valid() ? text : FixupPath(text));
+@@ -644,6 +677,8 @@
+ 
+     FixupHost(trimmed, parts.host, parts.scheme.is_valid(), desired_tld, &url);
+     if (chrome_url && !parts.host.is_valid()) {
++     if (!base::CommandLine::ForCurrentProcess()->HasSwitch("omnibox-autocomplete-filtering") ||
++         base::Contains(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("omnibox-autocomplete-filtering"), "chrome"))
+       url.append(kChromeUIDefaultHost);
+     }
+     FixupPort(trimmed, parts.port, &url);
 --- a/content/browser/child_process_security_policy_impl.cc
 +++ b/content/browser/child_process_security_policy_impl.cc
-@@ -938,6 +938,7 @@ ChildProcessSecurityPolicyImpl::ChildPro
+@@ -938,6 +938,8 @@
    RegisterWebSafeScheme(url::kWssScheme);
  #endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
    RegisterWebSafeScheme(url::kDataScheme);
 +  RegisterWebSafeScheme(url::kDigScheme);
++  RegisterWebSafeScheme(url::kTraceScheme);
  
    // TODO(nick): https://crbug.com/651534 blob: and filesystem: schemes embed
    // other origins, so we should not treat them as web safe. Remove callers of
+--- a/chrome/browser/profiles/profile_io_data.cc
++++ b/chrome/browser/profiles/profile_io_data.cc
+@@ -49,6 +49,9 @@
+       url::kAboutScheme,
+       url::kBlobScheme,
+       url::kFileSystemScheme,
++      // DIG Network native scheme — served by the browser-process
++      // DigURLLoaderFactory (chrome/browser/dig/).
++      url::kDigScheme,
+       chrome::kChromeSearchScheme,
+ #if !BUILDFLAG(IS_ANDROID)
+       chrome::kIsolatedAppScheme,
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -1108,6 +1108,12 @@ component("net") {
+@@ -1108,6 +1108,14 @@
      "url_request/static_http_user_agent_settings.cc",
      "url_request/static_http_user_agent_settings.h",
      "url_request/storage_access_status_cache.h",
@@ -96,6 +181,8 @@
 +    "url_request/dig_protocol_handler.h",
 +    "url_request/dig_urn.cc",
 +    "url_request/dig_urn.h",
++    "url_request/trk_protocol_handler.cc",
++    "url_request/trk_protocol_handler.h",
      "url_request/url_request.cc",
      "url_request/url_request.h",
      "url_request/url_request_context.cc",
@@ -193,7 +280,7 @@
 +#endif  // NET_URL_REQUEST_DIG_CRYPTO_H_
 --- /dev/null
 +++ b/net/url_request/dig_crypto.cc
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,247 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -205,7 +292,9 @@
 +#include "base/base64.h"
 +#include "base/containers/span.h"
 +#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
 +#include "third_party/boringssl/src/include/openssl/aead.h"
++#include "third_party/boringssl/src/include/openssl/digest.h"
 +#include "third_party/boringssl/src/include/openssl/hkdf.h"
 +#include "third_party/boringssl/src/include/openssl/sha.h"
 +
@@ -441,7 +530,7 @@
 +}  // namespace net::dig
 --- /dev/null
 +++ b/net/url_request/dig_protocol_handler.cc
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,474 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -458,6 +547,7 @@
 +#include <vector>
 +
 +#include "base/base64.h"
++#include "base/environment.h"
 +#include "base/functional/bind.h"
 +#include "base/json/json_reader.h"
 +#include "base/json/json_writer.h"
@@ -896,10 +986,22 @@
 +
 +// static
 +std::string DigProtocolHandler::GetRpcEndpoint() {
-+  // Default DIG JSON-RPC read endpoint (SYSTEM.md: rpc.dig.net). A build that
-+  // wants a different reference node can override this constant; the contract
-+  // (dig.getContent + client-side verify/decrypt) is unchanged.
-+  return "https://rpc.dig.net/";
++  // DIG read path: by default the browser talks to the LOCAL dig-node sidecar
++  // (127.0.0.1:9778), not rpc.dig.net directly. dig-node is local-first — it
++  // serves cached .dig content with no network round-trip and proxies to
++  // rpc.dig.net only on a miss (caching the result) — so pointing the browser
++  // at it gives local-first dig:// for free, with the exact same dig.getContent
++  // contract and client-side verify/decrypt.
++  //
++  // Override with the DIG_RPC_ENDPOINT env var, e.g. a remote reference node or
++  // "https://rpc.dig.net/" for a node-less build that talks to the network
++  // directly. An empty/unset var falls back to the local node.
++  std::unique_ptr<base::Environment> env = base::Environment::Create();
++  std::string endpoint = env->GetVar("DIG_RPC_ENDPOINT").value_or(std::string());
++  if (!endpoint.empty()) {
++    return endpoint;
++  }
++  return "http://127.0.0.1:9778/";
 +}
 +
 +}  // namespace net
@@ -964,7 +1066,7 @@
 +#endif  // NET_URL_REQUEST_DIG_PROTOCOL_HANDLER_H_
 --- /dev/null
 +++ b/net/url_request/dig_urn.cc
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,185 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1104,10 +1206,55 @@
 +  return out;
 +}
 +
++ParsedUrn ParseDigHostUrl(const std::string& host,
++                          const std::string& path,
++                          const std::string& query) {
++  ParsedUrn out;
++  out.chain = "chia";
++
++  // host = <store_id> | <root_hash>.<store_id>
++  std::vector<std::string> labels = base::SplitString(
++      host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
++  std::string store_id;
++  std::optional<std::string> root_hash;
++  if (labels.size() == 1) {
++    store_id = labels[0];
++  } else if (labels.size() == 2) {
++    root_hash = base::ToLowerASCII(labels[0]);
++    store_id = labels[1];
++  } else {
++    return out;  // unexpected host shape
++  }
++
++  if (!IsHex64(store_id)) {
++    return out;
++  }
++  if (root_hash.has_value() && !IsHex64(*root_hash)) {
++    return out;
++  }
++
++  // path is GURL::path(), which already excludes the query. Strip the leading
++  // '/'; the remainder is the resource key ("" => default view, applied by the
++  // caller / crypto layer as index.html).
++  std::string resource_key = path;
++  while (!resource_key.empty() && resource_key.front() == '/') {
++    resource_key.erase(resource_key.begin());
++  }
++
++  if (!query.empty()) {
++    out.salt = ExtractSalt(query);
++  }
++  out.store_id = base::ToLowerASCII(store_id);
++  out.root_hash = root_hash;
++  out.resource_key = resource_key;
++  out.valid = true;
++  return out;
++}
++
 +}  // namespace net::dig
 --- /dev/null
 +++ b/net/url_request/dig_urn.h
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,51 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1144,6 +1291,18 @@
 +// on any malformed input.
 +NET_EXPORT ParsedUrn ParseDigUrn(const std::string& input);
 +
++// Parse the canonical host-bearing form that the browser navigates to and that
++// relative subresources resolve against:
++//   host = <store_id>              -> rootless (root defaults to "latest")
++//   host = <root_hash>.<store_id>  -> rooted
++// (both labels 64-char hex), path = "/<resource_key>" ("" => default index.html),
++// query may carry "salt=<hex>". chain is assumed "chia". Returns valid=false on
++// a malformed host. `host`/`path`/`query` come straight from GURL::host()/path()/
++// query().
++NET_EXPORT ParsedUrn ParseDigHostUrl(const std::string& host,
++                                     const std::string& path,
++                                     const std::string& query);
++
 +}  // namespace net::dig
 +
 +#endif  // NET_URL_REQUEST_DIG_URN_H_
@@ -1153,46 +1312,143 @@
  #include "net/socket/network_binding_client_socket_factory.h"
  #include "net/ssl/ssl_config_service_defaults.h"
  #include "net/url_request/static_http_user_agent_settings.h"
-+#include "net/url_request/dig_protocol_handler.h"
++#include "net/url_request/trk_protocol_handler.h"
  #include "net/url_request/url_request_context.h"
  #include "net/url_request/url_request_job_factory.h"
  #include "url/url_constants.h"
-@@ -612,6 +613,9 @@ std::unique_ptr<URLRequestContext> URLRe
+@@ -612,6 +613,15 @@
    }
    protocol_handlers_.clear();
  
-+  job_factory->SetProtocolHandler(url::kDigScheme,
-+                                  std::make_unique<DigProtocolHandler>());
++  job_factory->SetProtocolHandler(url::kTraceScheme,
++                                  std::make_unique<TrkProtocolHandler>());
++
++  // NOTE: dig:// is NOT registered here. Network-service top-level navigations
++  // never consult the URLRequestContext job factory, so a legacy job here would
++  // never run for a dig:// navigation. dig:// is served by the browser-process
++  // DigURLLoaderFactory (chrome/browser/dig/) wired into
++  // CreateNonNetworkNavigationURLLoaderFactory instead.
 +
    context->set_job_factory(std::move(job_factory));
  
    if (cookie_deprecation_label_.has_value()) {
 --- a/url/url_constants.h
 +++ b/url/url_constants.h
-@@ -50,6 +50,8 @@ inline constexpr char kMaterializedViewS
+@@ -50,6 +50,10 @@
  inline constexpr char kSteamScheme[] = "steam";
  inline constexpr char kTelScheme[] = "tel";
  inline constexpr char16_t kTelScheme16[] = u"tel";
 +inline constexpr char kDigScheme[] = "dig";
 +inline constexpr char16_t kDigScheme16[] = u"dig";
++inline constexpr char kTraceScheme[] = "trk";
++inline constexpr char16_t kTraceScheme16[] = u"trk";
  inline constexpr char kUrnScheme[] = "urn";
  inline constexpr char16_t kUrnScheme16[] = u"urn";
  inline constexpr char kUuidInPackageScheme[] = "uuid-in-package";
 --- a/url/url_util.cc
 +++ b/url/url_util.cc
-@@ -85,6 +85,7 @@ struct SchemeRegistry {
+@@ -65,6 +65,10 @@
+        SCHEME_WITH_HOST_PORT_AND_USER_INFORMATION},  // WebSocket secure.
+       {kWsScheme, SCHEME_WITH_HOST_PORT_AND_USER_INFORMATION},  // WebSocket.
+       {kFileSystemScheme, SCHEME_WITHOUT_AUTHORITY},
++      // dig: is a host-bearing scheme — host = [<root>.]<store_id> (64-hex
++      // labels). Standard parsing gives it a tuple origin (dig://host) and
++      // makes relative subresource URLs resolve against the same store/root.
++      {kDigScheme, SCHEME_WITH_HOST},
+   };
+ 
+   // Schemes that are allowed for referrers.
+@@ -85,6 +89,11 @@
        kWssScheme,
        kDataScheme,
        kAboutScheme,
++      kTraceScheme,
++      // dig: serves cryptographically verified, content-addressed resources, so
++      // a dig:// origin is potentially trustworthy → a secure context (needed
++      // for wasm instantiation and secure-context-gated web APIs).
 +      kDigScheme,
    };
  
    // Schemes that normal pages cannot link to or access (i.e., with the same
-@@ -99,6 +100,7 @@ struct SchemeRegistry {
+@@ -99,6 +108,7 @@
        kAboutScheme,
        kJavaScriptScheme,
        kDataScheme,
-+      kDigScheme,
++      kTraceScheme,
    };
  
    // Schemes that can be sent CORS requests.
+@@ -110,7 +120,10 @@
+ 
+   // Schemes that can be used by web to store data (local storage, etc).
+   std::vector<std::string> web_storage_schemes = {
+-      kHttpsScheme, kHttpScheme, kFileScheme, kFtpScheme, kWssScheme, kWsScheme,
++      kHttpsScheme, kHttpScheme,  kFileScheme,
++      kFtpScheme,   kWssScheme,   kWsScheme,
++      // dig: pages are real web apps (localStorage/IndexedDB per dig:// origin).
++      kDigScheme,
+   };
+ 
+   // Schemes that can bypass the Content-Security-Policy (CSP) checks.
+--- a/url/gurl_unittest.cc
++++ b/url/gurl_unittest.cc
+@@ -1389,6 +1389,59 @@
+   EXPECT_FALSE(default_port_origin.IsSameOriginWith(resolved_origin));
+ }
+ 
++// DIG Browser: dig: is registered as an opaque-non-special scheme (see
++// url_util.cc) so a dig:// URL carrying a colon-laden urn:dig: payload parses
++// as a valid opaque-path URL (like steam:) instead of trying to read a
++// host:port out of the urn. These cases guard the native dig:// navigation
++// entry point.
++TEST_F(GURLTest, DigSchemeIsValidOpaquePathUrl) {
++  const std::string kStore =
++      "1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907";
++  const std::string kRoot =
++      "cc77916250e587e9d39d9fca59afdaf1bce89aa26c4d56249b2c14406dda8e4e";
++  const std::string kUrn =
++      "urn:dig:chia:" + kStore + ":" + kRoot + "/index.html";
++
++  // Because `dig` is registered in SchemeRegistry::opaque_non_special_schemes
++  // (see url_util.cc), dig: URLs are canonicalized via the legacy PathURL path:
++  // the entire colon-laden urn payload is carried verbatim in the URL's path,
++  // and the URL parses as valid instead of trying to read a host:port out of
++  // the urn. (PathURL parsing does not set the has_opaque_path flag — the
++  // payload is simply the path — so this proof asserts on the surviving
++  // payload, which is what the dig:// loader re-parses.)
++
++  // Form 1: dig://urn:dig:chia:<store>:<root>/index.html
++  GURL form1("dig://" + kUrn);
++  EXPECT_TRUE(form1.is_valid()) << form1.possibly_invalid_spec();
++  EXPECT_EQ("dig", form1.scheme());
++  // The colon-laden urn payload survives in the spec / path.
++  EXPECT_NE(std::string::npos, form1.possibly_invalid_spec().find(kStore));
++  EXPECT_NE(std::string::npos, form1.possibly_invalid_spec().find(kRoot));
++  EXPECT_NE(std::string::npos,
++            form1.possibly_invalid_spec().find("index.html"));
++  EXPECT_NE(std::string::npos, form1.GetContent().find(kStore));
++
++  // Form 2: dig:urn:dig:chia:<store>:<root>/index.html (no slashes)
++  GURL form2("dig:" + kUrn);
++  EXPECT_TRUE(form2.is_valid()) << form2.possibly_invalid_spec();
++  EXPECT_EQ("dig", form2.scheme());
++  EXPECT_NE(std::string::npos, form2.possibly_invalid_spec().find(kStore));
++  EXPECT_NE(std::string::npos, form2.GetContent().find(kStore));
++
++  // Form 3: the full urn:dig: form is the user-facing canonical address. GURL
++  // parses it under the urn: scheme; the omnibox/URL-fixer layer rewrites it to
++  // the dig: shorthand above before navigation. Here we only assert it is a
++  // well-formed urn: URL whose payload is preserved.
++  GURL form3(kUrn);
++  EXPECT_TRUE(form3.is_valid()) << form3.possibly_invalid_spec();
++  EXPECT_EQ("urn", form3.scheme());
++  EXPECT_NE(std::string::npos, form3.possibly_invalid_spec().find(kStore));
++
++  // dig: must NOT be parsed as an empty document (it carries a payload).
++  EXPECT_FALSE(form1.is_empty());
++  EXPECT_FALSE(form2.is_empty());
++}
++
+ class GURLTestTraits {
+  public:
+   using UrlType = GURL;
