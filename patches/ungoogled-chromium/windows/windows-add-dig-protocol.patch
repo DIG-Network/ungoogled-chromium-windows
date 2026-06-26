@@ -41,12 +41,12 @@
        url.SchemeIs(chrome::kChromeSearchScheme) ||
 --- a/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
 +++ b/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
-@@ -153,7 +153,9 @@
+@@ -153,8 +153,9 @@
      // RewriteURLIfNecessary removes the "view-source:" scheme which could lead
      // to incorrect matching, so ensure that the target and the candidate are
      // either both view-source:, or neither is.
--    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source) {
-+    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
+     if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
+-        tab_url.SchemeIs(url::kTraceScheme)) {
 +        tab_url.SchemeIs(url::kTraceScheme) ||
 +        tab_url.SchemeIs(url::kDigScheme)) {
        continue;
@@ -150,15 +150,6 @@
  #include "url/third_party/mozilla/url_parse.h"
  #include "url/url_file.h"
  #include "url/url_util.h"
-@@ -578,7 +579,7 @@
-   std::string scheme(SegmentURLInternal(&trimmed, &parts));
- 
-   // For view-source: URLs, we strip "view-source:", do fixup, and stick it back
--  // on.  This allows us to handle things like "view-source:9oo91e.qjz9zk".
-+  // on.  This allows us to handle things like "view-source:google.com".
-   if (scheme == kViewSourceScheme) {
-     // Reject "view-source:view-source:..." to avoid deep recursion.
-     std::string view_source(kViewSourceScheme + std::string(":"));
 @@ -595,6 +596,36 @@
      return GURL();
    }
