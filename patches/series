@@ -27,3 +27,4 @@ ungoogled-chromium/windows/windows-dig-install-modes.patch
 ungoogled-chromium/windows/windows-dig-branding.patch
 ungoogled-chromium/windows/windows-dig-newtab.patch
 ungoogled-chromium/windows/windows-dig-exe-name.patch
+ungoogled-chromium/windows/windows-dig-settings-section.patch

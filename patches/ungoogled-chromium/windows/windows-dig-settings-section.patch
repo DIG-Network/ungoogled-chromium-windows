@@ -1,0 +1,679 @@
+# DIG Browser: chrome://settings DIG section (native local-cache controls).
+#
+# Adds a dedicated "DIG" section to chrome://settings (its own left-nav entry,
+# route /dig, and page) exposing the native local-cache controls: a storage-cap
+# slider, live usage readout, and a Clear-cache button. This supersedes the
+# standalone dig-cache settings surface by placing the controls alongside the
+# other Chromium settings, with their own section, per DIG UX guidelines.
+#
+# Architecture:
+#  * ui/webui/resources/cr_components/dig_cache/ — a Mojo interface
+#    (DigCacheHandler: GetConfig / SetCapBytes / Clear). webui_module_path="/"
+#    so the generated dig_cache.mojom-webui.ts ships + compiles through the
+#    settings bundle (mirroring autofill_ai_enums.mojom), avoiding a CSP
+#    connect-src change (the loopback dig-node RPC is unreachable from a
+#    chrome://settings fetch).
+#  * chrome/browser/ui/webui/cr_components/dig_cache/dig_cache_handler.* — the
+#    browser-process handler. Each method posts a MayBlock task that calls the
+#    in-process DIG runtime (dig::CallDigRpc) with a cache.* JSON-RPC and maps
+#    the result back over Mojo. Bound on SettingsUI via the WebUI interface
+#    binder.
+#  * chrome/browser/resources/settings/dig_page/ — the Polymer settings element
+#    (settings-dig-page). The slider is driven by a synthetic PrefObject (the
+#    value is persisted via the Mojo handler, not the prefs store); a guarded
+#    observer pushes user edits to SetCapBytes and reflects the server-clamped
+#    value back.
+#  * Standard settings wiring: route (/dig), router, left-nav menu item, view
+#    in settings-main, page-visibility flag, lazy-load registration, and i18n
+#    strings.
+
+--- /dev/null
++++ b/ui/webui/resources/cr_components/dig_cache/dig_cache.mojom
+@@ -0,0 +1,25 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++module dig_cache.mojom;
++
++// The local DIG cache configuration, surfaced in the chrome://settings DIG
++// section. Sizes are in bytes.
++struct CacheConfig {
++  uint64 cap_bytes;
++  uint64 used_bytes;
++};
++
++// Browser-process handler for the chrome://settings DIG cache section. Pull-on-
++// open: the page reads the config, sets the cap, or clears the cache. The
++// browser fulfils each by calling the in-process DIG runtime (CallDigRpc FFI),
++// which owns the cache.
++interface DigCacheHandler {
++  // Current cap + on-disk usage.
++  GetConfig() => (CacheConfig config);
++  // Set the LRU cap (bytes); returns the effective cap (floored at 64 MiB).
++  SetCapBytes(uint64 cap_bytes) => (uint64 effective_cap_bytes);
++  // Purge the cache (content re-warms from rpc.dig.net on next visit).
++  Clear() => ();
++};
+--- /dev/null
++++ b/ui/webui/resources/cr_components/dig_cache/BUILD.gn
+@@ -0,0 +1,17 @@
++# Copyright 2026 The DIG Network Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//mojo/public/tools/bindings/mojom.gni")
++
++# DIG cache settings interface. Generates C++ bindings (consumed by the
++# settings WebUI handler) and a WebUI TS module. The generated
++# dig_cache.mojom-webui.ts is shipped + compiled through the settings bundle
++# (see chrome/browser/resources/settings/BUILD.gn mojo_files), mirroring how
++# autofill_ai_enums.mojom is consumed by settings. No component TS/CSS of its
++# own — the DIG settings element lives in the settings bundle as dig_page.ts.
++mojom("mojom") {
++  sources = [ "dig_cache.mojom" ]
++
++  webui_module_path = "/"
++}
+--- /dev/null
++++ b/chrome/browser/ui/webui/cr_components/dig_cache/dig_cache_handler.h
+@@ -0,0 +1,32 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_CR_COMPONENTS_DIG_CACHE_DIG_CACHE_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_CR_COMPONENTS_DIG_CACHE_DIG_CACHE_HANDLER_H_
++
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "ui/webui/resources/cr_components/dig_cache/dig_cache.mojom.h"
++
++// Browser-process handler for the chrome://settings DIG cache section. Reads +
++// writes the local-cache config by calling the in-process DIG runtime
++// (dig::CallDigRpc — the cache lives in dig-node).
++class DigCacheHandler : public dig_cache::mojom::DigCacheHandler {
++ public:
++  explicit DigCacheHandler(
++      mojo::PendingReceiver<dig_cache::mojom::DigCacheHandler> receiver);
++  DigCacheHandler(const DigCacheHandler&) = delete;
++  DigCacheHandler& operator=(const DigCacheHandler&) = delete;
++  ~DigCacheHandler() override;
++
++  // dig_cache::mojom::DigCacheHandler:
++  void GetConfig(GetConfigCallback callback) override;
++  void SetCapBytes(uint64_t cap_bytes, SetCapBytesCallback callback) override;
++  void Clear(ClearCallback callback) override;
++
++ private:
++  mojo::Receiver<dig_cache::mojom::DigCacheHandler> receiver_;
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_CR_COMPONENTS_DIG_CACHE_DIG_CACHE_HANDLER_H_
+--- /dev/null
++++ b/chrome/browser/ui/webui/cr_components/dig_cache/dig_cache_handler.cc
+@@ -0,0 +1,82 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/cr_components/dig_cache/dig_cache_handler.h"
++
++#include <optional>
++#include <string>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
++#include "base/strings/stringprintf.h"
++#include "base/task/thread_pool.h"
++#include "base/values.h"
++#include "chrome/browser/dig/dig_native_runtime.h"
++
++namespace {
++
++// Blocking FFI into the in-process DIG runtime — must run on a MayBlock thread.
++std::string CallDig(std::string request_json) {
++  return dig::CallDigRpc(request_json);
++}
++
++// Pull a u64 field out of the JSON-RPC "result" dict (response from dig-node).
++uint64_t ResultU64(const std::string& resp, const char* field) {
++  std::optional<base::Value> v =
++      base::JSONReader::Read(resp, base::JSON_PARSE_RFC);
++  if (v && v->is_dict()) {
++    if (const base::DictValue* result = v->GetDict().FindDict("result")) {
++      return static_cast<uint64_t>(result->FindDouble(field).value_or(0));
++    }
++  }
++  return 0;
++}
++
++}  // namespace
++
++DigCacheHandler::DigCacheHandler(
++    mojo::PendingReceiver<dig_cache::mojom::DigCacheHandler> receiver)
++    : receiver_(this, std::move(receiver)) {}
++
++DigCacheHandler::~DigCacheHandler() = default;
++
++void DigCacheHandler::GetConfig(GetConfigCallback callback) {
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock()},
++      base::BindOnce(&CallDig,
++                     R"({"jsonrpc":"2.0","id":1,"method":"cache.getConfig"})"),
++      base::BindOnce(
++          [](GetConfigCallback cb, std::string resp) {
++            auto config = dig_cache::mojom::CacheConfig::New();
++            config->cap_bytes = ResultU64(resp, "cap_bytes");
++            config->used_bytes = ResultU64(resp, "used_bytes");
++            std::move(cb).Run(std::move(config));
++          },
++          std::move(callback)));
++}
++
++void DigCacheHandler::SetCapBytes(uint64_t cap_bytes,
++                                  SetCapBytesCallback callback) {
++  std::string req = base::StringPrintf(
++      R"({"jsonrpc":"2.0","id":1,"method":"cache.setCapBytes",)"
++      R"("params":{"cap_bytes":%llu}})",
++      static_cast<unsigned long long>(cap_bytes));
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock()}, base::BindOnce(&CallDig, std::move(req)),
++      base::BindOnce(
++          [](SetCapBytesCallback cb, std::string resp) {
++            std::move(cb).Run(ResultU64(resp, "cap_bytes"));
++          },
++          std::move(callback)));
++}
++
++void DigCacheHandler::Clear(ClearCallback callback) {
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock()},
++      base::BindOnce(&CallDig,
++                     R"({"jsonrpc":"2.0","id":1,"method":"cache.clear"})"),
++      base::BindOnce([](ClearCallback cb, std::string) { std::move(cb).Run(); },
++                     std::move(callback)));
++}
+--- /dev/null
++++ b/chrome/browser/resources/settings/dig_page/dig_page.ts
+@@ -0,0 +1,147 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++/**
++ * @fileoverview
++ * 'settings-dig-page' is the settings page for the DIG Network protocol —
++ * currently the native local-cache threshold.
++ */
++import 'chrome://resources/cr_elements/cr_button/cr_button.js';
++import '../controls/settings_slider.js';
++import '../settings_page/settings_section.js';
++import '../settings_shared.css.js';
++
++import {PrefsMixin} from '/shared/settings/prefs/prefs_mixin.js';
++import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
++import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
++
++import {getSearchManager} from '../search_settings.js';
++import type {SettingsPlugin} from '../settings_main/settings_plugin.js';
++
++import {DigCacheHandler} from '../dig_cache.mojom-webui.js';
++import type {DigCacheHandlerRemote} from '../dig_cache.mojom-webui.js';
++import {getTemplate} from './dig_page.html.js';
++
++const GIB: number = 1024 * 1024 * 1024;
++
++const SettingsDigPageElementBase =
++    WebUiListenerMixin(PrefsMixin(PolymerElement));
++
++export class SettingsDigPageElement extends SettingsDigPageElementBase
++    implements SettingsPlugin {
++  static get is() {
++    return 'settings-dig-page';
++  }
++
++  static get template() {
++    return getTemplate();
++  }
++
++  static get properties() {
++    return {
++      // Synthetic pref backing the cache-cap slider. Not a real Chrome pref —
++      // settings-slider only needs a PrefObject<number> shape (key/type/value)
++      // to drive the knob; the value (in GiB) is persisted via the DIG mojo
++      // handler, not the prefs store.
++      capPref_: {
++        type: Object,
++        value() {
++          return {
++            key: 'digCacheCapGib',
++            type: chrome.settingsPrivate.PrefType.NUMBER,
++            value: 1,
++          };
++        },
++      },
++
++      usedBytes_: {
++        type: Number,
++        value: 0,
++      },
++
++      capTicks_: {
++        type: Array,
++        value() {
++          return [
++            {value: 1, label: '1 GB'},
++            {value: 2, label: '2 GB'},
++            {value: 5, label: '5 GB'},
++            {value: 10, label: '10 GB'},
++            {value: 25, label: '25 GB'},
++            {value: 50, label: '50 GB'},
++          ];
++        },
++      },
++
++      usedLabel_: {
++        type: String,
++        computed: 'computeUsedLabel_(usedBytes_, capPref_.value)',
++      },
++    };
++  }
++
++  static get observers() {
++    return ['onCapPrefChanged_(capPref_.value)'];
++  }
++
++  declare private capPref_: chrome.settingsPrivate.PrefObject<number>;
++  declare private usedBytes_: number;
++  declare private capTicks_: Array<{value: number, label: string}>;
++  declare private usedLabel_: string;
++
++  private handler_: DigCacheHandlerRemote = DigCacheHandler.getRemote();
++  // Suppresses the pref observer while we apply values programmatically (load /
++  // server-clamped echo), so only genuine user slider edits hit the handler.
++  private cacheLoaded_: boolean = false;
++
++  override ready() {
++    super.ready();
++    this.refreshConfig_();
++  }
++
++  private async refreshConfig_() {
++    const {config} = await this.handler_.getConfig();
++    this.usedBytes_ = Number(config.usedBytes);
++    this.cacheLoaded_ = false;
++    this.set('capPref_.value', Number(config.capBytes) / GIB);
++    this.cacheLoaded_ = true;
++  }
++
++  private async onCapPrefChanged_() {
++    if (!this.cacheLoaded_) {
++      return;
++    }
++    const {effectiveCapBytes} = await this.handler_.setCapBytes(
++        BigInt(Math.round(this.capPref_.value * GIB)));
++    const effGiB = Number(effectiveCapBytes) / GIB;
++    if (effGiB !== this.capPref_.value) {
++      this.cacheLoaded_ = false;
++      this.set('capPref_.value', effGiB);
++      this.cacheLoaded_ = true;
++    }
++  }
++
++  private async onClearCacheClick_() {
++    await this.handler_.clear();
++    this.refreshConfig_();
++  }
++
++  private computeUsedLabel_(used: number, capGiB: number): string {
++    return `${(used / GIB).toFixed(2)} GB of ${capGiB} GB used`;
++  }
++
++  // SettingsPlugin implementation
++  async searchContents(query: string) {
++    const searchRequest = await getSearchManager().search(query, this);
++    return searchRequest.getSearchResult();
++  }
++}
++
++declare global {
++  interface HTMLElementTagNameMap {
++    'settings-dig-page': SettingsDigPageElement;
++  }
++}
++
++customElements.define(SettingsDigPageElement.is, SettingsDigPageElement);
+--- /dev/null
++++ b/chrome/browser/resources/settings/dig_page/dig_page.html
+@@ -0,0 +1,22 @@
++<settings-section page-title="$i18n{digPageTitle}"
++    class="cr-centered-card-container">
++  <div class="cr-row first">
++    <div class="flex cr-padded-text">
++      <div>$i18n{digCacheLimitLabel}</div>
++      <div class="secondary">$i18n{digCacheLimitSublabel}</div>
++    </div>
++  </div>
++  <settings-slider class="hr"
++      pref="{{capPref_}}"
++      ticks="[[capTicks_]]"
++      label="$i18n{digCacheLimitLabel}">
++  </settings-slider>
++  <div class="cr-row continuation">
++    <div class="flex secondary">[[usedLabel_]]</div>
++  </div>
++  <div class="cr-row">
++    <cr-button on-click="onClearCacheClick_">
++      $i18n{digClearCacheButton}
++    </cr-button>
++  </div>
++</settings-section>
+--- a/ui/webui/BUILD.gn
++++ b/ui/webui/BUILD.gn
+@@ -49,6 +49,7 @@
+     if (!is_android && !is_ios) {
+       public_deps += [
+         "//ui/webui/resources/cr_components/customize_color_scheme_mode:mojom",
++        "//ui/webui/resources/cr_components/dig_cache:mojom",
+         "//ui/webui/resources/cr_components/history_clusters:mojo_bindings",
+         "//ui/webui/resources/cr_components/most_visited:mojom",
+         "//ui/webui/resources/cr_components/theme_color_picker:mojom",
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -1351,6 +1351,8 @@
+       "webui/chrome_web_contents_handler.h",
+       "webui/cr_components/customize_color_scheme_mode/customize_color_scheme_mode_handler.cc",
+       "webui/cr_components/customize_color_scheme_mode/customize_color_scheme_mode_handler.h",
++      "webui/cr_components/dig_cache/dig_cache_handler.cc",
++      "webui/cr_components/dig_cache/dig_cache_handler.h",
+       "webui/cr_components/history/history_util.cc",
+       "webui/cr_components/history/history_util.h",
+       "webui/cr_components/history_clusters/history_clusters_util.cc",
+--- a/chrome/browser/ui/webui/settings/settings_ui.h
++++ b/chrome/browser/ui/webui/settings/settings_ui.h
+@@ -19,6 +19,7 @@
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "ui/webui/mojo_web_ui_controller.h"
+ #include "ui/webui/resources/cr_components/customize_color_scheme_mode/customize_color_scheme_mode.mojom.h"
++#include "ui/webui/resources/cr_components/dig_cache/dig_cache.mojom.h"
+ #include "ui/webui/resources/cr_components/help_bubble/help_bubble.mojom.h"
+ 
+ #if !BUILDFLAG(IS_CHROMEOS)
+@@ -44,6 +45,7 @@
+ #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+ 
+ class CustomizeColorSchemeModeHandler;
++class DigCacheHandler;
+ namespace settings {
+ 
+ class SettingsUI;
+@@ -117,6 +119,11 @@
+                                 CustomizeColorSchemeModeHandlerFactory>
+           pending_receiver);
+ 
++  // DIG: the chrome://settings DIG cache section binds this directly (no
++  // factory — it is a simple pull-on-open handler).
++  void BindInterface(
++      mojo::PendingReceiver<dig_cache::mojom::DigCacheHandler> receiver);
++
+  private:
+   void AddSettingsPageUIHandler(
+       std::unique_ptr<content::WebUIMessageHandler> handler);
+@@ -178,6 +185,8 @@
+                      CustomizeColorSchemeModeHandlerFactory>
+       customize_color_scheme_mode_handler_factory_receiver_{this};
+ 
++  std::unique_ptr<DigCacheHandler> dig_cache_handler_;
++
+   base::CallbackListSubscription glic_settings_state_subscription_;
+ 
+   WEB_UI_CONTROLLER_TYPE_DECL();
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -53,6 +53,7 @@
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/side_panel/customize_chrome/customize_chrome_utils.h"
+ #include "chrome/browser/ui/webui/cr_components/customize_color_scheme_mode/customize_color_scheme_mode_handler.h"
++#include "chrome/browser/ui/webui/cr_components/dig_cache/dig_cache_handler.h"
+ #include "chrome/browser/ui/webui/extension_control_handler.h"
+ #include "chrome/browser/ui/webui/favicon_source.h"
+ #include "chrome/browser/ui/webui/managed_ui_handler.h"
+@@ -860,6 +861,11 @@
+       std::move(pending_receiver));
+ }
+ 
++void SettingsUI::BindInterface(
++    mojo::PendingReceiver<dig_cache::mojom::DigCacheHandler> receiver) {
++  dig_cache_handler_ = std::make_unique<DigCacheHandler>(std::move(receiver));
++}
++
+ void SettingsUI::UpdateShowGlicState() {
+   // The visibility of the Glic page can change based on the user accepting the
+   // FRE. Propagate this state to the WebUI value used to display the settings
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+@@ -137,6 +137,7 @@
+ #include "ui/webui/resources/cr_components/color_change_listener/color_change_listener.mojom.h"
+ #include "ui/webui/resources/cr_components/composebox/composebox.mojom.h"
+ #include "ui/webui/resources/cr_components/customize_color_scheme_mode/customize_color_scheme_mode.mojom.h"
++#include "ui/webui/resources/cr_components/dig_cache/dig_cache.mojom.h"
+ #include "ui/webui/resources/cr_components/help_bubble/custom_help_bubble.mojom.h"
+ #include "ui/webui/resources/cr_components/history/foreign_sessions.mojom.h"
+ #include "ui/webui/resources/cr_components/history/history.mojom.h"
+@@ -668,6 +669,7 @@
+ #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+       .Add<customize_color_scheme_mode::mojom::
+                CustomizeColorSchemeModeHandlerFactory>()
++      .Add<dig_cache::mojom::DigCacheHandler>()
+       .Add<help_bubble::mojom::HelpBubbleHandlerFactory>();
+ 
+   if (webui_browser::IsWebUIBrowserEnabled()) {
+--- a/chrome/browser/resources/settings/BUILD.gn
++++ b/chrome/browser/resources/settings/BUILD.gn
+@@ -101,6 +101,7 @@
+     "controls/settings_radio_group.ts",
+     "controls/settings_slider.ts",
+     "controls/settings_toggle_button.ts",
++    "dig_page/dig_page.ts",
+     "downloads_page/downloads_page.ts",
+     "glic_page/glic_page.ts",
+     "glic_page/glic_login_permissions_page.ts",
+@@ -435,8 +436,14 @@
+     "site_settings/site_settings_shared.css",
+   ]
+ 
+-  mojo_files_deps = [ "//components/autofill/core/browser/data_model/autofill_ai:mojo_bindings_ts__generator" ]
+-  mojo_files = [ "$root_gen_dir/components/autofill/core/browser/data_model/autofill_ai/autofill_ai_enums.mojom-webui.ts" ]
++  mojo_files_deps = [
++    "//components/autofill/core/browser/data_model/autofill_ai:mojo_bindings_ts__generator",
++    "//ui/webui/resources/cr_components/dig_cache:mojom_ts__generator",
++  ]
++  mojo_files = [
++    "$root_gen_dir/components/autofill/core/browser/data_model/autofill_ai/autofill_ai_enums.mojom-webui.ts",
++    "$root_gen_dir/ui/webui/resources/cr_components/dig_cache/dig_cache.mojom-webui.ts",
++  ]
+ 
+   ts_composite = true
+   ts_definitions = [
+--- a/chrome/browser/resources/settings/route.ts
++++ b/chrome/browser/resources/settings/route.ts
+@@ -296,6 +296,12 @@
+         loadTimeData.getString('downloadsPageTitle'));
+   }
+ 
++  // DIG: the DIG Network protocol section (local cache, etc.).
++  if (visibility.dig !== false) {
++    r.DIG = r.BASIC.createSection(
++        '/dig', 'dig', loadTimeData.getString('digPageTitle'));
++  }
++
+   if (visibility.a11y !== false) {
+     r.ACCESSIBILITY = r.ADVANCED.createSection(
+         '/accessibility', 'a11y', loadTimeData.getString('a11yPageTitle'));
+--- a/chrome/browser/resources/settings/router.ts
++++ b/chrome/browser/resources/settings/router.ts
+@@ -28,6 +28,7 @@
+   COMPARE: Route;
+   COOKIES: Route;
+   DEFAULT_BROWSER: Route;
++  DIG: Route;
+   DOWNLOADS: Route;
+   EDIT_DICTIONARY: Route;
+   FONTS: Route;
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -125,6 +125,13 @@
+           $i18n{languagesPageTitle}
+           <cr-ripple></cr-ripple>
+         </a>
++        <a role="menuitem" id="dig" href="/dig"
++            class="cr-nav-menu-item"
++            hidden="[[!pageVisibility_.dig]]">
++          <cr-icon icon="settings:download"></cr-icon>
++          $i18n{digPageTitle}
++          <cr-ripple></cr-ripple>
++        </a>
+         <a role="menuitem" id="downloads" href="/downloads"
+             class="cr-nav-menu-item"
+             hidden="[[!pageVisibility_.downloads]]">
+--- a/chrome/browser/resources/settings/settings_main/settings_main.html
++++ b/chrome/browser/resources/settings/settings_main/settings_main.html
+@@ -181,6 +181,15 @@
+     </div>
+   </template>
+ 
++  <template is="dom-if" if="[[showPage_(pageVisibility_.dig)]]">
++    <div slot="view" id="dig">
++      <template is="dom-if" if="[[renderPlugin_(
++          routes_.DIG, lastRoute_, inSearchMode_)]]">
++        <settings-dig-page prefs="{{prefs}}"></settings-dig-page>
++      </template>
++    </div>
++  </template>
++
+   <template is="dom-if" if="[[showPage_(pageVisibility_.downloads)]]">
+     <div slot="view" id="downloads">
+       <template is="dom-if" if="[[renderPlugin_(
+--- a/chrome/browser/resources/settings/page_visibility.ts
++++ b/chrome/browser/resources/settings/page_visibility.ts
+@@ -13,6 +13,7 @@
+   appearance?: boolean|AppearancePageVisibility;
+   autofill?: boolean;
+   defaultBrowser?: boolean;
++  dig?: boolean;
+   downloads?: boolean;
+   extensions?: boolean;
+   languages?: boolean;
+@@ -54,6 +55,7 @@
+     appearance: false,
+     autofill: false,
+     defaultBrowser: false,
++    dig: false,
+     downloads: false,
+     extensions: false,
+     languages: false,
+@@ -87,6 +89,7 @@
+       searchPrediction: false,
+       networkPrediction: false,
+     },
++    dig: true,
+     downloads: true,
+     a11y: true,
+     extensions: false,
+--- a/chrome/browser/resources/settings/ensure_lazy_loaded.ts
++++ b/chrome/browser/resources/settings/ensure_lazy_loaded.ts
+@@ -21,7 +21,8 @@
+               'settings-payments-section',
+               'settings-clear-browsing-data-dialog-v2',
+               'settings-search-engines-page',
+-              'settings-a11y-page', 'settings-downloads-page',
++              'settings-a11y-page', 'settings-dig-page',
++              'settings-downloads-page',
+               // <if expr="not is_chromeos">
+               'settings-languages-page',
+               // </if>
+--- a/chrome/browser/resources/settings/lazy_load.ts
++++ b/chrome/browser/resources/settings/lazy_load.ts
+@@ -106,6 +106,7 @@
+ import './people_page/sync_page.js';
+ // Sections
+ import './a11y_page/a11y_page_index.js';
++import './dig_page/dig_page.js';
+ import './downloads_page/downloads_page.js';
+ // <if expr="is_chromeos">
+ import './languages_page/languages_page_index_cros.js';
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -749,6 +749,16 @@
+   html_source->AddLocalizedStrings(kLocalizedStrings);
+ }
+ 
++void AddDigStrings(content::WebUIDataSource* html_source) {
++  static constexpr webui::LocalizedString kLocalizedStrings[] = {
++      {"digPageTitle", IDS_SETTINGS_DIG},
++      {"digCacheLimitLabel", IDS_SETTINGS_DIG_CACHE_LIMIT_LABEL},
++      {"digCacheLimitSublabel", IDS_SETTINGS_DIG_CACHE_LIMIT_SUBLABEL},
++      {"digClearCacheButton", IDS_SETTINGS_DIG_CLEAR_CACHE_BUTTON},
++  };
++  html_source->AddLocalizedStrings(kLocalizedStrings);
++}
++
+ bool IsWebActuationDisabledForEnterprise(Profile* profile) {
+   if (!base::FeatureList::IsEnabled(features::kGlicActor)) {
+     return false;
+@@ -4262,6 +4272,7 @@
+   AddAppearanceStrings(html_source, profile);
+   AddClearBrowsingDataStrings(html_source, profile);
+   AddCommonStrings(html_source, profile);
++  AddDigStrings(html_source);
+   AddDownloadsStrings(html_source);
+   AddExtensionsStrings(html_source);
+   AddGlicStrings(html_source, profile);
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -347,13 +347,13 @@
+       Search settings
+     </message>
+     <message name="IDS_SETTINGS_SEARCH_NO_RESULTS_HELP" desc="Help text for a search that has no results.">
+-      Go to <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Google Chrome help<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> if you can't find what you're looking for
++      Go to <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>DIG Browser help<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> if you can't find what you're looking for
+     </message>
+     <message name="IDS_SETTINGS_SETTINGS" desc="The settings page title.">
+       Settings
+     </message>
+     <message name="IDS_SETTINGS_ALT_PAGE_TITLE" desc="The settings page title for the about page.">
+-      Settings - <ph name="SECTION_TITLE">$1<ex>About Chromium</ex></ph>
++      Settings - <ph name="SECTION_TITLE">$1<ex>About DIG Browser</ex></ph>
+     </message>
+     <message name="IDS_SETTINGS_SUBPAGE_BUTTON" desc="Accessibility description for a button navigating the user from a settings page to one of the settings subpages.">
+       Subpage button
+@@ -975,6 +975,18 @@
+     <message name="IDS_SETTINGS_DOWNLOADS" desc="Name of the settings page which displays download preferences.">
+       Downloads
+     </message>
++    <message name="IDS_SETTINGS_DIG" desc="Name of the settings page for the DIG Network protocol.">
++      DIG
++    </message>
++    <message name="IDS_SETTINGS_DIG_CACHE_LIMIT_LABEL" desc="Label for the DIG local-cache storage limit setting.">
++      Local cache limit
++    </message>
++    <message name="IDS_SETTINGS_DIG_CACHE_LIMIT_SUBLABEL" desc="Sublabel explaining the DIG local-cache storage limit.">
++      Most space the DIG node may use to store sites from the DIG Network on this device. Visited sites load locally and show a "local" badge; least-recently-used sites are evicted first.
++    </message>
++    <message name="IDS_SETTINGS_DIG_CLEAR_CACHE_BUTTON" desc="Button that clears the DIG local cache.">
++      Clear cache
++    </message>
+     <message name="IDS_SETTINGS_DOWNLOAD_LOCATION" desc="Label for the input which allows the user to specify the default download directory." meaning="File location">
+       Location
+     </message>
+@@ -1754,7 +1766,7 @@
+       Passwords
+     </message>
+     <message name="IDS_SETTINGS_SAFETY_CHECK_PASSWORDS_FEATURE_UNAVAILABLE" desc="Explains that the password check feature is not available in this version of the browser.">
+-      Password check is not available in Chromium
++      Password check is not available in DIG Browser
+     </message>
+     <message name="IDS_SETTINGS_SAFETY_CHECK_SAFE_BROWSING_ENABLED" desc="This text points out that Safe Browsing is enabled and that the user is protected.">
+       Safe Browsing is on and protecting you from harmful sites and downloads
