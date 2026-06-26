@@ -21,10 +21,19 @@
 
 --- a/chrome/browser/themes/theme_properties.cc
 +++ b/chrome/browser/themes/theme_properties.cc
-@@ -39,4 +39,5 @@ namespace {
- // Default tints.
- constexpr color_utils::HSL kDefaultTintButtons = {-1, -1, -1};
--constexpr color_utils::HSL kDefaultTintFrame = {-1, -1, -1};
-+// DIG Browser brand purple (#5800D6) expressed as the default frame tint.
-+constexpr color_utils::HSL kDefaultTintFrame = {0.742, 1.0, 0.42};
- constexpr color_utils::HSL kDefaultTintFrameInactive = {-1, -1, 0.75};
+@@ -250,6 +250,15 @@
+     return {-1, -1, 0.642};  // #DEE1E6 -> #E7EAED
+   }
+ 
++  // DIG Browser brand purple (#5800D6) expressed as the default frame tint.
++  // In Chromium 149 the module-level kDefaultTint* constants were removed and
++  // GetDefaultTint() returns the tint literals directly; TINT_FRAME (active,
++  // non-incognito) falls through to this default return, so seeding the DIG
++  // violet here is the 149-equivalent of the old kDefaultTintFrame override.
++  if (id == TINT_FRAME) {
++    return {0.742, 1.0, 0.42};
++  }
++
+   return {-1, -1, -1};
+ }
+ 

@@ -206,7 +206,7 @@ def _apply_dig_branding(source_tree):
 
     # Rebrand the residual hardcoded "Google Chrome"/"The Chromium Authors" in the
     # BRANDING file's COPYRIGHT line (feeds the About-box copyright + VERSIONINFO).
-    branding_file = app_dir / 'theme' / 'chromium' / 'BRANDING'
+    branding_file = theme / 'BRANDING'
     if branding_file.exists():
         try:
             bt = branding_file.read_text(encoding=ENCODING)
@@ -363,6 +363,14 @@ def main():
         '--tarball',
         action='store_true'
     )
+    parser.add_argument(
+        '--prep-only',
+        dest='prep_only',
+        action='store_true',
+        help='Stop after applying patches (skip dig branding, domain substitution, '
+             'and the gn/ninja build) — used to stage the source tree for the '
+             'C:\\d move + manual build, and to re-anchor patches on a version bump.'
+    )
     args = parser.parse_args()
 
     # Set common variables
@@ -383,19 +391,26 @@ def main():
 
         # Prepare source folder
         if args.tarball:
-            # Download chromium tarball
-            get_logger().info('Downloading chromium tarball...')
-            download_info = downloads.DownloadInfo([_ROOT_DIR / 'ungoogled-chromium' / 'downloads.ini'])
-            downloads.retrieve_downloads(download_info, downloads_cache, None, True, args.disable_ssl_verification)
-            try:
-                downloads.check_downloads(download_info, downloads_cache, None)
-            except downloads.HashMismatchError as exc:
-                get_logger().error('File checksum does not match: %s', exc)
-                exit(1)
+            if (source_tree / 'BUILD.gn').exists():
+                # Source already extracted (a prior run unpacked the tarball). Skip
+                # the download + unpack so prune/patches can be re-run idempotently
+                # without colliding on the existing tree (the unpack renames the
+                # tarball's children up into build/src and errors on a second pass).
+                get_logger().info('Chromium source already extracted; skipping download/unpack')
+            else:
+                # Download chromium tarball
+                get_logger().info('Downloading chromium tarball...')
+                download_info = downloads.DownloadInfo([_ROOT_DIR / 'ungoogled-chromium' / 'downloads.ini'])
+                downloads.retrieve_downloads(download_info, downloads_cache, None, True, args.disable_ssl_verification)
+                try:
+                    downloads.check_downloads(download_info, downloads_cache, None)
+                except downloads.HashMismatchError as exc:
+                    get_logger().error('File checksum does not match: %s', exc)
+                    exit(1)
 
-            # Unpack chromium tarball
-            get_logger().info('Unpacking chromium tarball...')
-            downloads.unpack_downloads(download_info, downloads_cache, None, source_tree, extractors)
+                # Unpack chromium tarball
+                get_logger().info('Unpacking chromium tarball...')
+                downloads.unpack_downloads(download_info, downloads_cache, None, source_tree, extractors)
         else:
             # Clone sources
             subprocess.run([sys.executable, str(Path('ungoogled-chromium', 'utils', 'clone.py')), '-o', 'build\\src', '-p', 'win32' if args.x86 else 'win-arm64' if args.arm else 'win64'], check=True)
@@ -450,6 +465,11 @@ def main():
             source_tree,
             patch_bin_path=(source_tree / _PATCH_BIN_RELPATH)
         )
+
+        if args.prep_only:
+            get_logger().info('--prep-only: stopping after patches '
+                              '(skipping dig branding, domain substitution, build)')
+            return
 
         # Overlay DIG Browser binary brand assets (icons + new-tab page).
         get_logger().info('Applying DIG Browser branding assets...')

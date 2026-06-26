@@ -34,7 +34,7 @@
 # safebrowsing.patch, which precedes this patch in the series).
 --- a/chrome/browser/themes/theme_service.cc
 +++ b/chrome/browser/themes/theme_service.cc
-@@ -317,6 +317,20 @@
+@@ -373,6 +373,20 @@
    pref_change_registrar_.Add(
        prefs::kUserColor, base::BindRepeating(&ThemeService::NotifyThemeChanged,
                                               base::Unretained(this)));
@@ -64,7 +64,7 @@
 +#include "chrome/grit/theme_resources.h"
  #include "components/prefs/pref_service.h"
  #include "components/user_prefs/user_prefs.h"
- #include "components/vector_icons/vector_icons.h"
+ #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 @@ -32,6 +33,7 @@
  #include "ui/base/l10n/l10n_util.h"
  #include "ui/base/metadata/metadata_header_macros.h"
@@ -73,7 +73,7 @@
  #include "ui/base/models/menu_model.h"
  #include "ui/base/mojom/dialog_button.mojom.h"
  #include "ui/views/accessibility/view_accessibility.h"
-@@ -147,7 +149,13 @@
+@@ -152,7 +154,13 @@
    SetProperty(views::kElementIdentifierKey, kToolbarHomeButtonElementId);
    SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
                             ui::EF_MIDDLE_MOUSE_BUTTON);
@@ -90,9 +90,9 @@
    SetID(VIEW_ID_HOME_BUTTON);
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -97,9 +97,12 @@
-       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
- #endif
+@@ -116,9 +116,12 @@
+   registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  
 -  registry->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, true,
 +  // DIG Browser: show the home button by default and make "home" the DIG
@@ -103,43 +103,11 @@
 -  registry->RegisterBooleanPref(prefs::kShowHomeButton, false,
 +  registry->RegisterBooleanPref(prefs::kShowHomeButton, true,
                                  pref_registration_flags);
- 
-   registry->RegisterBooleanPref(prefs::kShowForwardButton, true,
-@@ -113,7 +116,7 @@
-   registry->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu, true);
-   registry->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar, true);
-   registry->RegisterBooleanPref(
--      translate::prefs::kOfferTranslateEnabled, true,
-+      translate::prefs::kOfferTranslateEnabled, false,
-       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-   registry->RegisterStringPref(prefs::kCloudPrintEmail, std::string());
-   registry->RegisterBooleanPref(prefs::kCloudPrintProxyEnabled, true);
-@@ -125,12 +128,12 @@
-                                 false);
- #endif
-   registry->RegisterStringPref(prefs::kWebRTCIPHandlingPolicy,
--                               blink::kWebRTCIPHandlingDefault);
-+                               blink::kWebRTCIPHandlingDisableNonProxiedUdp);
-   registry->RegisterListPref(prefs::kWebRTCIPHandlingUrl, base::Value::List());
-   registry->RegisterStringPref(prefs::kWebRTCUDPPortRange, std::string());
-   registry->RegisterBooleanPref(prefs::kWebRtcEventLogCollectionAllowed, false);
-   registry->RegisterListPref(prefs::kWebRtcLocalIpsAllowedUrls);
--  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, true);
-+  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, false);
- 
-   // We need to register the type of these preferences in order to query
-   // them even though they're only typically controlled via policy.
+   registry->RegisterBooleanPref(prefs::kSplitViewDragAndDropEnabled, true,
+                                 pref_registration_flags);
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -158,7 +158,6 @@
- #include "components/profile_metrics/browser_profile_type.h"
- #include "components/safe_search_api/safe_search_util.h"
- #include "components/security_interstitials/content/stateful_ssl_host_state_delegate.h"
--#include "components/signin/public/base/signin_pref_names.h"
- #include "components/signin/public/identity_manager/identity_manager.h"
- #include "components/site_isolation/site_isolation_policy.h"
- #include "components/spellcheck/spellcheck_buildflags.h"
-@@ -399,10 +398,13 @@
+@@ -404,10 +404,13 @@
  #else
    uint32_t home_page_flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
  #endif
@@ -155,44 +123,24 @@
  
  #if BUILDFLAG(ENABLE_PRINTING)
    registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
-@@ -853,11 +855,6 @@
-   // The password settings service needs to start listening to settings
-   // changes from Google Mobile Services, as early as possible.
-   PasswordManagerSettingsServiceFactory::GetForProfile(this);
--#else
--
--  if (features::IsMainNodeAnnotationsEnabled()) {
--    screen_ai::AXMainNodeAnnotatorControllerFactory::GetForProfile(this);
--  }
- #endif  // BUILDFLAG(IS_ANDROID)
- 
-   // The announcement notification  service might not be available for some
-@@ -1120,7 +1117,6 @@
-   CHECK(!ProfilePasswordStoreFactory::HasStore(this));
-   CHECK(!AccountPasswordStoreFactory::HasStore(this));
-   CHECK(!ReadingListModelFactory::HasModel(this));
--  browser_sync::MaybeMigrateSyncingUserToSignedIn(GetPath(), GetPrefs());
- 
- #if BUILDFLAG(IS_ANDROID)
-   // On Android StartupData creates proto database provider for the profile
 --- a/content/renderer/render_thread_impl.cc
 +++ b/content/renderer/render_thread_impl.cc
-@@ -85,6 +85,7 @@
+@@ -86,6 +86,7 @@
  #include "content/public/common/gpu_stream_constants.h"
  #include "content/public/common/url_constants.h"
  #include "content/public/renderer/content_renderer_client.h"
 +#include "url/url_constants.h"
  #include "content/public/renderer/render_frame.h"
+ #include "content/public/renderer/render_frame_visitor.h"
  #include "content/public/renderer/render_thread_observer.h"
- #include "content/renderer/agent_scheduling_group.h"
-@@ -972,6 +973,13 @@
+@@ -906,6 +907,13 @@
    WebSecurityPolicy::RegisterURLSchemeAsAllowingWasmEvalCSP(
        chrome_untrusted_scheme);
  
 +  // dig: (DIG Network verified content) — allow the Fetch API and wasm eval,
 +  // like chrome-untrusted, so a dig:// page can fetch() and instantiate its
 +  // own same-origin resources (incl. .wasm modules served by the dig loader).
-+  WebString dig_scheme(WebString::FromASCII(url::kDigScheme));
++  WebString dig_scheme(WebString::FromAscii(url::kDigScheme));
 +  WebSecurityPolicy::RegisterURLSchemeAsSupportingFetchAPI(dig_scheme);
 +  WebSecurityPolicy::RegisterURLSchemeAsAllowingWasmEvalCSP(dig_scheme);
 +
@@ -209,17 +157,9 @@
  #include "base/task/current_thread.h"
  #include "base/task/single_thread_task_runner.h"
  #include "base/task/thread_pool.h"
-@@ -1005,6 +1006,7 @@
-   if (first_run::IsChromeFirstRun()) {
-     if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
-         !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
-+      browser_creator_->AddFirstRunTabs({GURL("chrome://ungoogled-first-run")});
-       browser_creator_->AddFirstRunTabs(master_prefs_->new_tabs);
-     }
-   }
-@@ -1345,6 +1347,11 @@
-   for (auto& chrome_extra_part : chrome_extra_parts_)
+@@ -1652,6 +1653,11 @@
      chrome_extra_part->PostBrowserStart();
+   }
  
 +  // DIG: bring up the native in-process DIG runtime — the browser process IS the
 +  // DIG node (dig_runtime.dll loaded in-process, called directly via FFI). No
@@ -229,62 +169,35 @@
    browser_process_->browser_policy_connector()->OnBrowserStarted();
  
  #if BUILDFLAG(ENABLE_PROCESS_SINGLETON)
-@@ -1582,11 +1589,6 @@
-   // and preferences have been registered since some of the import code depends
-   // on preferences.
-   if (first_run::IsChromeFirstRun()) {
--    // `profile` may be nullptr even on first run, for example when the
--    // "BrowserSignin" policy is set to "Force". If so, skip the auto import.
--    if (profile) {
--      first_run::AutoImport(profile, master_prefs_->import_bookmarks_path);
--    }
- 
-     // Note: This can pop-up the first run consent dialog on Linux & Mac.
-     first_run::DoPostImportTasks(master_prefs_->make_chrome_default_for_user);
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -73,6 +73,7 @@
+@@ -81,6 +81,7 @@
  #include "chrome/browser/data_saver/data_saver.h"
  #include "chrome/browser/defaults.h"
  #include "chrome/browser/device_api/device_service_impl.h"
 +#include "chrome/browser/dig/dig_url_loader_factory.h"
  #include "chrome/browser/device_api/managed_configuration_service.h"
+ #include "chrome/browser/devtools/features.h"
  #include "chrome/browser/download/chrome_download_manager_delegate.h"
- #include "chrome/browser/download/download_prefs.h"
-@@ -284,7 +285,6 @@
- #include "components/safe_browsing/core/browser/url_checker_delegate.h"
- #include "components/safe_browsing/core/common/features.h"
- #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
--#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
- #include "components/search_engines/template_url_service.h"
- #include "components/security_state/core/security_state.h"
- #include "components/services/on_device_translation/buildflags/buildflags.h"
-@@ -834,11 +834,15 @@
- 
+@@ -851,6 +852,7 @@
    // Don't change the URL when incognito mode.
    if (profile->IsOffTheRecord()) {
+    if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
 +   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
      return false;
    }
  
-   std::string ntp_location =
-       profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
+@@ -859,6 +861,9 @@
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
+     ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
+   if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
 +  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
 +    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
 +  if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
    if (ntp_location.empty()) {
      return false;
    }
-@@ -1419,7 +1423,7 @@
- void ChromeContentBrowserClient::RegisterProfilePrefs(
-     user_prefs::PrefRegistrySyncable* registry) {
-   registry->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
--  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, true);
-+  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, false);
-   // Register user prefs for mapping SitePerProcess and IsolateOrigins in
-   // user policy in addition to the same named ones in Local State (which are
-   // used for mapping the command-line flags).
-@@ -2693,24 +2697,6 @@
+@@ -2813,24 +2818,6 @@
      command_line->AppendSwitchASCII(switches::kMetricsClientID,
                                      client_info->client_id);
    }
@@ -309,10 +222,10 @@
  #endif
  
    if (logging::DialogsAreSuppressed()) {
-@@ -5973,6 +5959,13 @@
-     return {};
+@@ -6186,6 +6173,13 @@
    }
- #endif  // !BUILDFLAG(IS_ANDROID)
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS)
 +
 +  // Native dig:// scheme (DIG Browser): resolve DIG Network content via the
 +  // browser-process DigURLLoaderFactory. Network-service navigations never
@@ -323,8 +236,8 @@
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE) || BUILDFLAG(IS_CHROMEOS) ||
          // !BUILDFLAG(IS_ANDROID)
  
-@@ -6308,6 +6301,12 @@
-                                browser_context, request_initiator_origin));
+@@ -6587,6 +6581,12 @@
+                                /*enforce_same_origin=*/true));
        }
      }
 +
@@ -334,19 +247,19 @@
 +    factories->emplace(url::kDigScheme,
 +                       dig::DigURLLoaderFactory::Create(browser_context));
    }
- #endif
- 
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+         // BUILDFLAG(IS_CHROMEOS)
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
-@@ -59,6 +59,7 @@
- #include "third_party/blink/public/web/web_frame_content_dumper.h"
+@@ -67,6 +67,7 @@
  #include "third_party/blink/public/web/web_local_frame.h"
+ #include "third_party/blink/public/web/web_local_frame_client.h"
  #include "third_party/blink/public/web/web_node.h"
 +#include "third_party/blink/public/web/web_script_source.h"
  #include "third_party/blink/public/web/web_security_policy.h"
  #include "third_party/blink/public/web/web_view.h"
  #include "third_party/libwebp/src/src/webp/decode.h"
-@@ -68,9 +69,13 @@
+@@ -76,6 +77,11 @@
  #include "ui/gfx/codec/webp_codec.h"
  #include "ui/gfx/geometry/size_f.h"
  #include "url/gurl.h"
@@ -357,52 +270,12 @@
 +#include "chrome/renderer/dig_provider_js.inc"
  
  #if !BUILDFLAG(IS_ANDROID)
--#include "chrome/renderer/accessibility/read_anything/read_anything_app_controller.h"
- #include "chrome/renderer/actor/journal.h"
- #include "chrome/renderer/actor/tool_executor.h"
  #include "chrome/renderer/searchbox/searchbox_extension.h"
-@@ -259,14 +264,16 @@
-   if (frame->Parent() || frame->IsInFencedFrameTree())
-     return;
- 
--  GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
--  if (!osdd_url.is_empty()) {
--    mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
--        osdd_handler;
--    render_frame()->GetBrowserInterfaceBroker().GetInterface(
--        osdd_handler.BindNewPipeAndPassReceiver());
--    osdd_handler->PageHasOpenSearchDescriptionDocument(
--        frame->GetDocument().Url(), osdd_url);
-+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
-+    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
-+    if (!osdd_url.is_empty()) {
-+      mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
-+          osdd_handler;
-+      render_frame()->GetBrowserInterfaceBroker().GetInterface(
-+          osdd_handler.BindNewPipeAndPassReceiver());
-+      osdd_handler->PageHasOpenSearchDescriptionDocument(
-+          frame->GetDocument().Url(), osdd_url);
-+    }
-   }
- }
- 
-@@ -323,21 +330,21 @@
- }
- 
- void ChromeRenderFrameObserver::DidClearWindowObject() {
--#if !BUILDFLAG(IS_ANDROID)
--  const base::CommandLine& command_line =
--      *base::CommandLine::ForCurrentProcess();
--  if (command_line.HasSwitch(switches::kInstantProcess))
--    SearchBoxExtension::Install(render_frame()->GetWebFrame());
--
--  // Install ReadAnythingAppController on render frames with the Read Anything
--  // url, which is chrome-untrusted. ReadAnythingAppController installs v8
--  // bindings in the chrome.readingMode namespace which are consumed by
--  // read_anything/app.ts, the resource of the Read Anything WebUI.
--  if (render_frame()->GetWebFrame()->GetDocument().Url() ==
--      chrome::kChromeUIUntrustedReadAnythingSidePanelURL) {
--    ReadAnythingAppController::Install(render_frame());
+@@ -346,6 +352,22 @@
+ #if BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   guest_view::SlimWebViewBindings::MaybeInstall(*render_frame());
+ #endif  // BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
++
 +  // DIG: inject the built-in Chia wallet provider (window.chia, CHIP-0002) into
 +  // every web page at document start, before page scripts run. The provider
 +  // proxies to the in-process wallet over loopback; the wallet enforces a
@@ -416,23 +289,22 @@
 +  if (url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme) ||
 +      url.SchemeIs(url::kDigScheme)) {
 +    frame->ExecuteScript(blink::WebScriptSource(
-+        blink::WebString::FromUTF8(std::string_view(kDigProviderJs))));
-   }
--#endif  // !BUILDFLAG(IS_ANDROID)
++        blink::WebString::FromUtf8(std::string_view(kDigProviderJs))));
++  }
  }
  
  void ChromeRenderFrameObserver::DidMeaningfulLayout(
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -16,6 +16,7 @@
+@@ -18,6 +18,7 @@
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
 +#include "chrome/browser/dig/dig_tab_helper.h"
  #include "chrome/browser/buildflags.h"
- #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
  #include "chrome/browser/chained_back_navigation_tracker.h"
-@@ -330,6 +331,10 @@
+ #include "chrome/browser/chrome_content_browser_client.h"
+@@ -343,6 +344,10 @@
    // ChromeSubresourceFilterClient has it as a dependency.
    infobars::ContentInfoBarManager::CreateForWebContents(web_contents);
  
@@ -443,16 +315,17 @@
    Profile* profile =
        Profile::FromBrowserContext(web_contents->GetBrowserContext());
  
-@@ -544,7 +549,9 @@
-       profile, web_contents);
+@@ -597,8 +602,10 @@
  #endif  // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
    SafetyTipWebContentsObserver::CreateForWebContents(web_contents);
+   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
 +  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
    SearchEngineTabHelper::CreateForWebContents(web_contents);
+   }
 +  }
-   if (site_engagement::SiteEngagementService::IsEnabled()) {
-     site_engagement::SiteEngagementService::Helper::CreateForWebContents(
-         web_contents,
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   if (base::FeatureList::IsEnabled(switches::kEnableSearchAIModeSigninPromo) &&
+       base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks)) {
 --- a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.h
 +++ b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.h
 @@ -45,6 +45,7 @@
@@ -466,14 +339,14 @@
 --- a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
 +++ b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
 @@ -10,6 +10,7 @@
- #include "build/build_config.h"
  #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
  #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+ #include "chrome/browser/contextual_tasks/contextual_tasks_ui_interface.h"
 +#include "chrome/browser/dig/dig_tab_helper.h"
+ #include "chrome/browser/contextual_tasks/contextual_tasks_utils.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/search/search.h"
- #include "chrome/browser/search_engines/template_url_service_factory.h"
-@@ -204,6 +205,15 @@
+@@ -212,6 +213,15 @@
  #endif
  }
  
@@ -489,13 +362,16 @@
  bool ChromeLocationBarModelDelegate::IsNewTabPage() const {
    content::NavigationEntry* const entry = GetNavigationEntry();
    if (!entry || entry->IsInitialEntry()) {
-@@ -268,5 +278,5 @@
- // static
- void ChromeLocationBarModelDelegate::RegisterProfilePrefs(
-     user_prefs::PrefRegistrySyncable* registry) {
--  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, false);
-+  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, true);
- }
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -685,6 +685,7 @@
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+     "//chrome/browser/autocomplete:impl",
+     "//chrome/browser/autofill",
++    "//chrome/browser/dig",
+     "//chrome/browser/background",
+     "//chrome/browser/background:impl",
+     "//chrome/browser/background/glic",
 --- /dev/null
 +++ b/chrome/browser/dig/dig_tab_helper.h
 @@ -0,0 +1,43 @@
@@ -582,172 +458,6 @@
 +WEB_CONTENTS_USER_DATA_KEY_IMPL(DigTabHelper);
 +
 +}  // namespace dig
---- a/chrome/browser/BUILD.gn
-+++ b/chrome/browser/BUILD.gn
-@@ -634,8 +634,6 @@
-     "idle/idle_detection_permission_context.h",
-     "interstitials/chrome_settings_page_helper.cc",
-     "interstitials/chrome_settings_page_helper.h",
--    "interstitials/enterprise_util.cc",
--    "interstitials/enterprise_util.h",
-     "invalidation/profile_invalidation_provider_factory.cc",
-     "invalidation/profile_invalidation_provider_factory.h",
-     "k_anonymity_service/k_anonymity_service_client.cc",
-@@ -796,10 +794,6 @@
-     "navigation_predictor/navigation_predictor_metrics_document_data.h",
-     "navigation_predictor/navigation_predictor_preconnect_client.cc",
-     "navigation_predictor/navigation_predictor_preconnect_client.h",
--    "navigation_predictor/preloading_model_keyed_service.cc",
--    "navigation_predictor/preloading_model_keyed_service.h",
--    "navigation_predictor/preloading_model_keyed_service_factory.cc",
--    "navigation_predictor/preloading_model_keyed_service_factory.h",
-     "navigation_predictor/search_engine_preconnector_keyed_service_factory.cc",
-     "navigation_predictor/search_engine_preconnector_keyed_service_factory.h",
-     "net/cert_verifier_service_time_updater.cc",
-@@ -1938,6 +1932,7 @@
-     "//chrome/browser/ai:impl",
-     "//chrome/browser/autocomplete",
-     "//chrome/browser/autofill",
-+    "//chrome/browser/dig",
-     "//chrome/browser/background:background",
-     "//chrome/browser/background:impl",
-     "//chrome/browser/battery",
-@@ -2285,6 +2280,7 @@
-     "//components/net_log",
-     "//components/network_hints/common:mojo_bindings",
-     "//components/network_session_configurator/browser",
-+    "//components/network_session_configurator/common",
-     "//components/network_time",
-     "//components/network_time/time_tracker",
-     "//components/no_state_prefetch/browser",
-@@ -2389,7 +2385,6 @@
-     "//components/resources",
-     "//components/safe_browsing/content/browser",
-     "//components/safe_browsing/content/browser:safe_browsing_service",
--    "//components/safe_browsing/content/browser/notification_content_detection",
-     "//components/safe_browsing/content/browser/password_protection",
-     "//components/safe_browsing/content/browser/web_ui",
-     "//components/safe_browsing/content/common/proto:download_file_types_proto",
-@@ -2609,6 +2604,7 @@
-     "//third_party/libyuv",
-     "//third_party/metrics_proto",
-     "//third_party/re2",
-+    "//components/ungoogled:ungoogled_switches",
-     "//third_party/webrtc_overrides:webrtc_component",
-     "//third_party/widevine/cdm:buildflags",
-     "//third_party/widevine/cdm:headers",
-@@ -3665,10 +3661,6 @@
-   } else {
-     #!is_android
-     sources += [
--      "accessibility/ax_main_node_annotator_controller.cc",
--      "accessibility/ax_main_node_annotator_controller.h",
--      "accessibility/ax_main_node_annotator_controller_factory.cc",
--      "accessibility/ax_main_node_annotator_controller_factory.h",
-       "accessibility/caption_bubble_context_browser.h",
-       "accessibility/embedded_a11y_extension_loader.cc",
-       "accessibility/embedded_a11y_extension_loader.h",
-@@ -3797,8 +3789,6 @@
-       "download/download_auto_open_policy_handler.cc",
-       "download/download_auto_open_policy_handler.h",
-       "download/download_commands.cc",
--      "download/download_danger_prompt.cc",
--      "download/download_danger_prompt.h",
-       "download/download_dir_policy_handler.cc",
-       "download/download_dir_policy_handler.h",
-       "download/download_dir_util.cc",
-@@ -4011,10 +4001,6 @@
-       "new_tab_page/modules/modules_switches.h",
-       "new_tab_page/modules/new_tab_page_modules.cc",
-       "new_tab_page/modules/new_tab_page_modules.h",
--      "new_tab_page/modules/safe_browsing/safe_browsing_handler.cc",
--      "new_tab_page/modules/safe_browsing/safe_browsing_handler.h",
--      "new_tab_page/modules/safe_browsing/safe_browsing_prefs.cc",
--      "new_tab_page/modules/safe_browsing/safe_browsing_prefs.h",
-       "new_tab_page/modules/v2/authentication/microsoft_auth_page_handler.cc",
-       "new_tab_page/modules/v2/authentication/microsoft_auth_page_handler.h",
-       "new_tab_page/modules/v2/calendar/calendar_fake_data_helper.cc",
-@@ -4388,8 +4374,6 @@
-       "//chrome/app:command_ids",
-       "//chrome/app/theme:chrome_unscaled_resources_grit",
-       "//chrome/app/vector_icons",
--      "//chrome/browser/accessibility/tree_fixing:prefs",
--      "//chrome/browser/accessibility/tree_fixing:service",
-       "//chrome/browser/actor",
-       "//chrome/browser/actor:impl",
-       "//chrome/browser/apps/app_service",
-@@ -4410,10 +4394,6 @@
-       "//chrome/browser/metrics/desktop_session_duration",
-       "//chrome/browser/new_tab_page/chrome_colors",
-       "//chrome/browser/policy:path_parser",
--      "//chrome/browser/screen_ai:prefs",
--      "//chrome/browser/screen_ai:screen_ai_install_state",
--      "//chrome/browser/screen_ai:screen_ai_service_router_factory",
--      "//chrome/browser/screen_ai/public:optical_character_recognizer",
-       "//chrome/browser/search/background",
-       "//chrome/browser/sharing_hub",
-       "//chrome/browser/smart_card",
-@@ -4575,9 +4555,6 @@
-       "//components/webauthn/core/browser",
-       "//components/webauthn/core/browser:passkey_model",
-       "//services/device/public/cpp/hid",
--      "//services/screen_ai",
--      "//services/screen_ai/public/cpp:utilities",
--      "//services/screen_ai/public/mojom",
-       "//third_party/crashpad/crashpad/client:common",
-       "//third_party/zxcvbn-cpp",
-       "//ui/views",
-@@ -4697,8 +4674,6 @@
-       sources += [
-         "accessibility/soda_installer_impl.cc",
-         "accessibility/soda_installer_impl.h",
--        "component_updater/screen_ai_component_installer.cc",
--        "component_updater/screen_ai_component_installer.h",
-         "device_identity/device_oauth2_token_store_desktop.cc",
-         "device_identity/device_oauth2_token_store_desktop.h",
-         "device_notifications/device_status_icon_renderer.cc",
-@@ -4737,8 +4712,6 @@
-         "profiles/profile_activity_metrics_recorder.h",
-         "profiles/profile_list_desktop.cc",
-         "profiles/profile_list_desktop.h",
--        "screen_ai/screen_ai_downloader_non_chromeos.cc",
--        "screen_ai/screen_ai_downloader_non_chromeos.h",
-         "signin/force_signin_verifier.cc",
-         "signin/force_signin_verifier.h",
-         "signin/signin_manager.cc",
-@@ -5543,7 +5516,6 @@
-       "//chrome/browser/policy:system_features_disable_list",
-       "//chrome/browser/push_notification:push_notification",
-       "//chrome/browser/resources:app_icon_resources",
--      "//chrome/browser/screen_ai:screen_ai_dlc_installer",
-       "//chrome/browser/sharesheet",
-       "//chrome/browser/support_tool/ash",
-       "//chrome/browser/ui/ash/accelerator",
-@@ -5810,7 +5782,6 @@
-       "//remoting/host/chromeos:browser_interop",
-       "//remoting/host/chromeos:features",
-       "//services/device/public/cpp/geolocation",
--      "//services/screen_ai/public/cpp:metrics",
-       "//third_party/nearby:rpc_resources_proto",
-       "//third_party/nearby:wire_format_proto",
-       "//ui/chromeos",
-@@ -8724,7 +8695,6 @@
-       "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
-       "//chrome/browser/new_tab_page/chrome_colors:generate_colors_info",
-       "//chrome/browser/new_tab_page/modules/file_suggestion:mojo_bindings",
--      "//chrome/browser/new_tab_page/modules/safe_browsing:mojo_bindings",
-       "//chrome/browser/new_tab_page/modules/v2/authentication:mojo_bindings",
-       "//chrome/browser/new_tab_page/modules/v2/calendar:mojo_bindings",
-       "//chrome/browser/new_tab_page/modules/v2/most_relevant_tab_resumption:mojo_bindings",
-@@ -9212,8 +9182,6 @@
-     "//components/reporting/util:status",
-     "//components/reporting/util:status_macros",
-     "//components/reporting/util:task_runner_context",
--    "//components/safe_browsing/content/browser/notification_content_detection:notification_content_detection",
--    "//components/safe_browsing/content/browser/notification_content_detection:test_utils",
-     "//components/safe_browsing/core/common/proto:csd_proto",
-     "//components/search_engines:test_support",
-     "//components/security_interstitials/content:security_interstitial_page",
 --- /dev/null
 +++ b/chrome/browser/dig/BUILD.gn
 @@ -0,0 +1,23 @@
@@ -994,7 +704,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,699 @@
+@@ -0,0 +1,702 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1044,7 +754,6 @@
 +#include "net/http/http_util.h"
 +#include "net/traffic_annotation/network_traffic_annotation.h"
 +#include "net/url_request/dig_crypto.h"
-+#include "net/url_request/dig_protocol_handler.h"
 +#include "net/url_request/dig_urn.h"
 +#include "services/network/public/cpp/resource_request.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -1249,7 +958,7 @@
 +    // here). It is a trusted browser-internal resource embedded in the binary,
 +    // NOT on-chain content, so it is served directly without resolve/verify/
 +    // decrypt. Every OTHER dig:// host is a store id and stays fully verified.
-+    if (url.host_piece() == "home") {
++    if (url.host() == "home") {
 +      output_ = kDigHomeHtml;
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
@@ -1258,7 +967,7 @@
 +    }
 +    // dig://wallet opens the built-in Chia wallet, served in-process by the DIG
 +    // runtime over loopback (an interactive web UI). Redirect to it.
-+    if (url.host_piece() == "wallet") {
++    if (url.host() == "wallet") {
 +      output_ =
 +          "<!doctype html><meta charset=\"utf-8\">"
 +          "<meta http-equiv=\"refresh\" content=\"0;url=http://127.0.0.1:9777/\">"
@@ -1271,7 +980,7 @@
 +    }
 +    // dig://settings opens the DIG protocol settings page (local-cache
 +    // threshold, etc.), served in-process by the DIG runtime over loopback.
-+    if (url.host_piece() == "settings") {
++    if (url.host() == "settings") {
 +      output_ =
 +          "<!doctype html><meta charset=\"utf-8\">"
 +          "<meta http-equiv=\"refresh\" content=\"0;url=http://127.0.0.1:9777/settings\">"
@@ -1286,7 +995,9 @@
 +    // dig://[<root>.]<store_id>/<resource>; relative subresources resolve
 +    // against the same host, so parse the store/root from the host and the
 +    // resource from the path.
-+    parsed_ = net::dig::ParseDigHostUrl(url.host(), url.path(), url.query());
++    parsed_ = net::dig::ParseDigHostUrl(std::string(url.host()),
++                                        std::string(url.path()),
++                                        std::string(url.query()));
 +    if (!parsed_.valid) {
 +      FinishWithError("That dig:// address isn't a valid DIG URN.");
 +      return;
@@ -1324,9 +1035,9 @@
 +  // DIG runtime (dig.getAnchoredRoot) DIRECTLY via FFI on a MayBlock thread —
 +  // the browser process IS the node, so there is no loopback server to POST to.
 +  void StartRootResolve() {
-+    base::Value::Dict params;
++    base::DictValue params;
 +    params.Set("store_id", parsed_.store_id);
-+    base::Value::Dict body;
++    base::DictValue body;
 +    body.Set("jsonrpc", "2.0");
 +    body.Set("id", 1);
 +    body.Set("method", "dig.getAnchoredRoot");
@@ -1342,9 +1053,10 @@
 +
 +  void OnNodeRootResolved(std::string body) {
 +    if (!body.empty()) {
-+      std::optional<base::Value> parsed = base::JSONReader::Read(body);
++      std::optional<base::Value> parsed =
++          base::JSONReader::Read(body, base::JSON_PARSE_RFC);
 +      if (parsed && parsed->is_dict()) {
-+        if (const base::Value::Dict* result =
++        if (const base::DictValue* result =
 +                parsed->GetDict().FindDict("result")) {
 +          const std::string* r = result->FindString("root");
 +          if (r && r->size() == 64) {
@@ -1382,14 +1094,14 @@
 +
 +  void StartRpcWindow(int64_t offset) {
 +    // Build the JSON-RPC 2.0 dig.getContent request body.
-+    base::Value::Dict params;
++    base::DictValue params;
 +    params.Set("store_id", parsed_.store_id);
 +    params.Set("root", root_);
 +    params.Set("retrieval_key", retrieval_key_);
 +    params.Set("offset", static_cast<double>(offset));
 +    params.Set("length", kRpcChunk);
 +
-+    base::Value::Dict body;
++    base::DictValue body;
 +    body.Set("jsonrpc", "2.0");
 +    body.Set("id", 1);
 +    body.Set("method", "dig.getContent");
@@ -1418,18 +1130,19 @@
 +  }
 +
 +  void HandleRpcWindowComplete() {
-+    std::optional<base::Value> parsed = base::JSONReader::Read(rpc_body_);
++    std::optional<base::Value> parsed =
++        base::JSONReader::Read(rpc_body_, base::JSON_PARSE_RFC);
 +    if (!parsed || !parsed->is_dict()) {
 +      FinishWithError("DIG RPC returned a malformed response.");
 +      return;
 +    }
-+    const base::Value::Dict& root = parsed->GetDict();
-+    if (const base::Value::Dict* err = root.FindDict("error")) {
++    const base::DictValue& root = parsed->GetDict();
++    if (const base::DictValue* err = root.FindDict("error")) {
 +      const std::string* msg = err->FindString("message");
 +      FinishWithError(msg ? *msg : "DIG RPC error.");
 +      return;
 +    }
-+    const base::Value::Dict* result = root.FindDict("result");
++    const base::DictValue* result = root.FindDict("result");
 +    if (!result) {
 +      FinishWithError("DIG RPC returned no data.");
 +      return;
@@ -1450,7 +1163,7 @@
 +      }
 +      total_length_ = static_cast<int64_t>(*total);
 +      ciphertext_.assign(static_cast<size_t>(total_length_), 0);
-+      if (const base::Value::List* lens = result->FindList("chunk_lens")) {
++      if (const base::ListValue* lens = result->FindList("chunk_lens")) {
 +        for (const base::Value& v : *lens) {
 +          if (v.is_int()) {
 +            chunk_lens_.push_back(static_cast<uint32_t>(v.GetInt()));
