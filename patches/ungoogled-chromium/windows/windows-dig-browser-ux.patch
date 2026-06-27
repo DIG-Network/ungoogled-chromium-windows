@@ -57,7 +57,15 @@
  void ThemeService::Shutdown() {
 --- a/chrome/browser/ui/views/toolbar/home_button.cc
 +++ b/chrome/browser/ui/views/toolbar/home_button.cc
-@@ -25,6 +25,7 @@
+@@ -19,12 +19,15 @@
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/view_ids.h"
+ #include "chrome/browser/ui/views/chrome_layout_provider.h"
  #include "chrome/browser/ui/views/toolbar/pinned_action_toolbar_button_menu_model.h"
  #include "chrome/common/pref_names.h"
  #include "chrome/grit/generated_resources.h"
@@ -65,19 +73,30 @@
  #include "components/prefs/pref_service.h"
  #include "components/user_prefs/user_prefs.h"
  #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
-@@ -32,6 +33,7 @@
+@@ -32,8 +35,11 @@
  #include "ui/base/l10n/l10n_util.h"
  #include "ui/base/metadata/metadata_header_macros.h"
  #include "ui/base/metadata/metadata_impl_macros.h"
 +#include "ui/base/models/image_model.h"
  #include "ui/base/models/menu_model.h"
  #include "ui/base/mojom/dialog_button.mojom.h"
++#include "ui/base/window_open_disposition.h"
++#include "ui/gfx/geometry/rect.h"
  #include "ui/views/accessibility/view_accessibility.h"
-@@ -152,7 +154,13 @@
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/controls/styled_label.h"
+@@ -148,17 +154,46 @@
+                         kActionHome),
+                     nullptr),
+       prefs_(browser_window_interface->GetProfile()->GetPrefs()),
++      profile_(browser_window_interface->GetProfile()),
+       coordinator_(prefs_) {
    SetProperty(views::kElementIdentifierKey, kToolbarHomeButtonElementId);
    SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
                             ui::EF_MIDDLE_MOUSE_BUTTON);
 -  SetVectorIcons(kNavigateHomeChromeRefreshIcon, kNavigateHomeTouchIcon);
+-  SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_HOME));
+-  GetViewAccessibility().SetName(l10n_util::GetStringUTF16(IDS_ACCNAME_HOME));
 +  // DIG Browser: the home button is the DIG coin. Show the full-color DIG logo
 +  // (not the monochrome house vector icon) — we intentionally do NOT call
 +  // SetVectorIcons, so ToolbarButton::UpdateIcon() stays a no-op and never
@@ -85,9 +104,60 @@
 +  // gives it the "circular DIG coin" feel; clicking navigates to dig.net (home).
 +  SetImageModel(views::Button::STATE_NORMAL,
 +                ui::ImageModel::FromResourceId(IDR_PRODUCT_LOGO_16));
-   SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_HOME));
-   GetViewAccessibility().SetName(l10n_util::GetStringUTF16(IDS_ACCNAME_HOME));
++  // DIG Browser: the DIG coin opens the built-in DIG Wallet in a compact popup
++  // window -- it is the wallet button, not a navigate-home button. Override the
++  // home-navigation PressedCallback the toolbar wired in with our own action.
++  SetCallback(
++      base::BindRepeating(&HomeButton::OpenDigWallet, base::Unretained(this)));
++  SetTooltipText(u"DIG Wallet");
++  GetViewAccessibility().SetName(std::u16string(u"DIG Wallet"));
    SetID(VIEW_ID_HOME_BUTTON);
+   SizeToPreferredSize();
+ }
+ 
++void HomeButton::OpenDigWallet() {
++  if (!profile_) {
++    return;
++  }
++  // Open chia://wallet (the in-process DIG Wallet UI) in a compact, minimal-
++  // chrome popup window sized like a wallet panel. NEW_POPUP with the default
++  // window_action auto-shows the window; the size comes from window_features.
++  NavigateParams params(profile_.get(), GURL("chia://wallet"),
++                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++  params.disposition = WindowOpenDisposition::NEW_POPUP;
++  params.window_features.has_width = true;
++  params.window_features.has_height = true;
++  params.window_features.bounds.set_width(420);
++  params.window_features.bounds.set_height(720);
++  Navigate(&params);
++}
++
+ HomeButton::~HomeButton() = default;
+ 
+ bool HomeButton::GetDropFormats(
+--- a/chrome/browser/ui/views/toolbar/home_button.h
++++ b/chrome/browser/ui/views/toolbar/home_button.h
+@@ -16,6 +16,7 @@
+ 
+ class BrowserWindowInterface;
+ class PrefService;
++class Profile;
+ 
+ class HomePageUndoBubbleCoordinator {
+  public:
+@@ -60,7 +61,12 @@
+       ui::mojom::DragOperation& output_drag_op,
+       std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner);
+ 
++  // DIG Browser: the DIG-coin button opens the built-in DIG Wallet
++  // (chia://wallet) in a compact popup window instead of navigating home.
++  void OpenDigWallet();
++
+   const raw_ptr<PrefService> prefs_;
++  const raw_ptr<Profile> profile_;
+   HomePageUndoBubbleCoordinator coordinator_;
+ 
+   base::WeakPtrFactory<HomeButton> weak_ptr_factory_{this};
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
 @@ -116,9 +116,12 @@
@@ -105,6 +175,29 @@
                                  pref_registration_flags);
    registry->RegisterBooleanPref(prefs::kSplitViewDragAndDropEnabled, true,
                                  pref_registration_flags);
+@@ -142,8 +145,9 @@
+   registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
+   registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacementPopup);
+   registry->RegisterDictionaryPref(prefs::kAppWindowPlacement);
++  // DIG Browser: privacy-first default -- send "Do Not Track" by default.
+   registry->RegisterBooleanPref(
+-      prefs::kEnableDoNotTrack, false,
++      prefs::kEnableDoNotTrack, true,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+ #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+   registry->RegisterBooleanPref(prefs::kPrintPreviewUseSystemDefaultPrinter,
+@@ -215,8 +219,10 @@
+                                 false);
+ #endif
+ 
++  // DIG Browser: privacy-first default -- HTTPS-Only Mode on (https all the
++  // time; users can still proceed past the interstitial per-site).
+   registry->RegisterBooleanPref(
+-      prefs::kHttpsOnlyModeEnabled, false,
++      prefs::kHttpsOnlyModeEnabled, true,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   registry->RegisterBooleanPref(
+       prefs::kHttpsFirstBalancedMode, false,
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
 @@ -404,10 +404,13 @@
@@ -115,11 +208,11 @@
 +  // DIG Browser: the home button navigates to the DIG Network site by default.
 +  registry->RegisterStringPref(prefs::kHomePage, "https://dig.net/",
                                 home_page_flags);
-+  // DIG Browser: every new tab opens the DIG Home (dig://home), served from the
++  // DIG Browser: every new tab opens the DIG Home (chia://home), served from the
 +  // embedded resource by the in-process dig handler. Users can still override it.
    registry->RegisterStringPref(prefs::kNewTabPageLocationOverride,
 -                               std::string());
-+                               "dig://home");
++                               "chia://home");
  
  #if BUILDFLAG(ENABLE_PRINTING)
    registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
@@ -893,7 +986,7 @@
 +      "<div class=\"d\">D</div>"
 +      "<h1>Couldn&rsquo;t load this DIG resource</h1>"
 +      "<p>", message, "</p>"
-+      "<div class=\"u\">dig://</div>"
++      "<div class=\"u\">chia://</div>"
 +      "</div></body></html>"});
 +}
 +
@@ -954,10 +1047,10 @@
 +  ~DigURLLoader() override = default;
 +
 +  void Start(const GURL& url) {
-+    // dig://home is the DIG Browser's own home page (the new-tab page points
++    // chia://home is the DIG Browser's own home page (the new-tab page points
 +    // here). It is a trusted browser-internal resource embedded in the binary,
 +    // NOT on-chain content, so it is served directly without resolve/verify/
-+    // decrypt. Every OTHER dig:// host is a store id and stays fully verified.
++    // decrypt. Every OTHER chia:// host is a store id and stays fully verified.
 +    if (url.host() == "home") {
 +      output_ = kDigHomeHtml;
 +      mime_type_ = "text/html";
@@ -965,7 +1058,7 @@
 +      SendResponse();
 +      return;
 +    }
-+    // dig://wallet opens the built-in Chia wallet, served in-process by the DIG
++    // chia://wallet opens the built-in Chia wallet, served in-process by the DIG
 +    // runtime over loopback (an interactive web UI). Redirect to it.
 +    if (url.host() == "wallet") {
 +      output_ =
@@ -978,7 +1071,7 @@
 +      SendResponse();
 +      return;
 +    }
-+    // dig://settings opens the DIG protocol settings page (local-cache
++    // chia://settings opens the DIG protocol settings page (local-cache
 +    // threshold, etc.), served in-process by the DIG runtime over loopback.
 +    if (url.host() == "settings") {
 +      output_ =
@@ -992,14 +1085,14 @@
 +      return;
 +    }
 +    // The browser navigates the canonical host-bearing form
-+    // dig://[<root>.]<store_id>/<resource>; relative subresources resolve
++    // chia://[<root>.]<store_id>/<resource>; relative subresources resolve
 +    // against the same host, so parse the store/root from the host and the
 +    // resource from the path.
 +    parsed_ = net::dig::ParseDigHostUrl(std::string(url.host()),
 +                                        std::string(url.path()),
 +                                        std::string(url.query()));
 +    if (!parsed_.valid) {
-+      FinishWithError("That dig:// address isn't a valid DIG URN.");
++      FinishWithError("That chia:// address isn't a valid DIG URN.");
 +      return;
 +    }
 +    chain_ = parsed_.chain.empty() ? "chia" : parsed_.chain;

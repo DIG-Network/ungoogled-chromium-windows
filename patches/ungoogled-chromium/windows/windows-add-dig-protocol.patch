@@ -41,12 +41,12 @@
        url.SchemeIs(chrome::kChromeSearchScheme) ||
 --- a/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
 +++ b/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
-@@ -153,8 +153,9 @@
+@@ -153,7 +153,9 @@
      // RewriteURLIfNecessary removes the "view-source:" scheme which could lead
      // to incorrect matching, so ensure that the target and the candidate are
      // either both view-source:, or neither is.
-     if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
--        tab_url.SchemeIs(url::kTraceScheme)) {
+-    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source) {
++    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
 +        tab_url.SchemeIs(url::kTraceScheme) ||
 +        tab_url.SchemeIs(url::kDigScheme)) {
        continue;
@@ -150,16 +150,25 @@
  #include "url/third_party/mozilla/url_parse.h"
  #include "url/url_file.h"
  #include "url/url_util.h"
+@@ -578,7 +579,7 @@
+   std::string scheme(SegmentURLInternal(&trimmed, &parts));
+ 
+   // For view-source: URLs, we strip "view-source:", do fixup, and stick it back
+-  // on.  This allows us to handle things like "view-source:9oo91e.qjz9zk".
++  // on.  This allows us to handle things like "view-source:google.com".
+   if (scheme == kViewSourceScheme) {
+     // Reject "view-source:view-source:..." to avoid deep recursion.
+     std::string view_source(kViewSourceScheme + std::string(":"));
 @@ -595,6 +596,36 @@
      return GURL();
    }
  
-+  // Canonicalize any user-typed DIG address — urn:dig:..., dig:urn:dig:...,
-+  // or dig://<chain>:<store>[:<root>]/<res> — to the host-bearing form
-+  // dig://[<root>.]<store_id>/<resource>. That host form parses as a standard
++  // Canonicalize any user-typed DIG address — urn:dig:..., chia:urn:dig:...,
++  // or chia://<chain>:<store>[:<root>]/<res> — to the host-bearing form
++  // chia://[<root>.]<store_id>/<resource>. That host form parses as a standard
 +  // URL and makes relative subresources resolve against the same store/root.
 +  // Missing root => latest. The DEFAULT VIEW (no resource, or an explicit
-+  // index.html) canonicalizes to dig://<host>/ with NO /index.html in the URL —
++  // index.html) canonicalizes to chia://<host>/ with NO /index.html in the URL —
 +  // the loader serves index.html for the root path, exactly like a web server
 +  // serves "/" without showing "/index.html" in the address bar.
 +  if ((scheme == url::kUrnScheme &&
@@ -171,7 +180,7 @@
 +      std::string host = p.root_hash.has_value()
 +                             ? (*p.root_hash + "." + p.store_id)
 +                             : p.store_id;
-+      std::string canonical = "dig://" + host + "/";
++      std::string canonical = "chia://" + host + "/";
 +      if (!p.resource_key.empty() && p.resource_key != "index.html") {
 +        canonical += p.resource_key;
 +      }
@@ -241,12 +250,16 @@
  }
 --- a/url/url_constants.h
 +++ b/url/url_constants.h
-@@ -50,6 +50,8 @@
+@@ -50,6 +50,12 @@
  inline constexpr char kSteamScheme[] = "steam";
  inline constexpr char kTelScheme[] = "tel";
  inline constexpr char16_t kTelScheme16[] = u"tel";
-+inline constexpr char kDigScheme[] = "dig";
-+inline constexpr char16_t kDigScheme16[] = u"dig";
++// The DIG Browser registers the custom URL scheme under the value "chia"
++// (the symbol name kDigScheme is retained). The browser handles chia://
++// addresses; the urn:dig: URN namespace is unchanged (it derives retrieval
++// keys and must stay exactly).
++inline constexpr char kDigScheme[] = "chia";
++inline constexpr char16_t kDigScheme16[] = u"chia";
  inline constexpr char kTraceScheme[] = "trk";
  inline constexpr char16_t kTraceScheme16[] = u"trk";
  inline constexpr char kUrnScheme[] = "urn";
@@ -318,18 +331,18 @@
 +  const std::string kUrn =
 +      "urn:dig:chia:" + kStore + ":" + kRoot + "/index.html";
 +
-+  // Because `dig` is registered in SchemeRegistry::opaque_non_special_schemes
-+  // (see url_util.cc), dig: URLs are canonicalized via the legacy PathURL path:
++  // Because `chia` is registered in SchemeRegistry::opaque_non_special_schemes
++  // (see url_util.cc), chia: URLs are canonicalized via the legacy PathURL path:
 +  // the entire colon-laden urn payload is carried verbatim in the URL's path,
 +  // and the URL parses as valid instead of trying to read a host:port out of
 +  // the urn. (PathURL parsing does not set the has_opaque_path flag — the
 +  // payload is simply the path — so this proof asserts on the surviving
-+  // payload, which is what the dig:// loader re-parses.)
++  // payload, which is what the chia:// loader re-parses.)
 +
-+  // Form 1: dig://urn:dig:chia:<store>:<root>/index.html
-+  GURL form1("dig://" + kUrn);
++  // Form 1: chia://urn:dig:chia:<store>:<root>/index.html
++  GURL form1("chia://" + kUrn);
 +  EXPECT_TRUE(form1.is_valid()) << form1.possibly_invalid_spec();
-+  EXPECT_EQ("dig", form1.scheme());
++  EXPECT_EQ("chia", form1.scheme());
 +  // The colon-laden urn payload survives in the spec / path.
 +  EXPECT_NE(std::string::npos, form1.possibly_invalid_spec().find(kStore));
 +  EXPECT_NE(std::string::npos, form1.possibly_invalid_spec().find(kRoot));
@@ -337,23 +350,23 @@
 +            form1.possibly_invalid_spec().find("index.html"));
 +  EXPECT_NE(std::string::npos, form1.GetContent().find(kStore));
 +
-+  // Form 2: dig:urn:dig:chia:<store>:<root>/index.html (no slashes)
-+  GURL form2("dig:" + kUrn);
++  // Form 2: chia:urn:dig:chia:<store>:<root>/index.html (no slashes)
++  GURL form2("chia:" + kUrn);
 +  EXPECT_TRUE(form2.is_valid()) << form2.possibly_invalid_spec();
-+  EXPECT_EQ("dig", form2.scheme());
++  EXPECT_EQ("chia", form2.scheme());
 +  EXPECT_NE(std::string::npos, form2.possibly_invalid_spec().find(kStore));
 +  EXPECT_NE(std::string::npos, form2.GetContent().find(kStore));
 +
 +  // Form 3: the full urn:dig: form is the user-facing canonical address. GURL
 +  // parses it under the urn: scheme; the omnibox/URL-fixer layer rewrites it to
-+  // the dig: shorthand above before navigation. Here we only assert it is a
++  // the chia: shorthand above before navigation. Here we only assert it is a
 +  // well-formed urn: URL whose payload is preserved.
 +  GURL form3(kUrn);
 +  EXPECT_TRUE(form3.is_valid()) << form3.possibly_invalid_spec();
 +  EXPECT_EQ("urn", form3.scheme());
 +  EXPECT_NE(std::string::npos, form3.possibly_invalid_spec().find(kStore));
 +
-+  // dig: must NOT be parsed as an empty document (it carries a payload).
++  // chia: must NOT be parsed as an empty document (it carries a payload).
 +  EXPECT_FALSE(form1.is_empty());
 +  EXPECT_FALSE(form2.is_empty());
 +}
@@ -771,11 +784,11 @@
 +  ParsedUrn out;
 +  std::string s = input;
 +
-+  // Strip the dig:// scheme prefix and any leading slashes (path-style callers).
-+  if (base::StartsWith(s, "dig://", base::CompareCase::INSENSITIVE_ASCII)) {
-+    s = s.substr(6);
-+  } else if (base::StartsWith(s, "dig:", base::CompareCase::INSENSITIVE_ASCII)) {
-+    s = s.substr(4);
++  // Strip the chia:// scheme prefix and any leading slashes (path-style callers).
++  if (base::StartsWith(s, "chia://", base::CompareCase::INSENSITIVE_ASCII)) {
++    s = s.substr(7);
++  } else if (base::StartsWith(s, "chia:", base::CompareCase::INSENSITIVE_ASCII)) {
++    s = s.substr(5);
 +  }
 +  while (!s.empty() && s.front() == '/') {
 +    s.erase(s.begin());
@@ -898,13 +911,13 @@
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +//
-+// dig:// URN parsing. Mirrors the shared parser in the reference
++// chia:// URN parsing. Mirrors the shared parser in the reference
 +// `dig-chrome-extension` (dig-urn.mjs) and the canonical Rust parser in
 +// `digstore-core` (urn.rs). Accepts both the full URN form
 +//   urn:dig:<chain>:<storeID>[:<rootHash>][/<resourceKey>][?salt=<hex>]
-+// and the dig:// shorthand
-+//   dig://<chain>:<storeID>[:<rootHash>][/<resourceKey>]
-+//   dig://<storeID>[:<rootHash>][/<resourceKey>]   (chain defaults to "chia")
++// and the chia:// shorthand
++//   chia://<chain>:<storeID>[:<rootHash>][/<resourceKey>]
++//   chia://<storeID>[:<rootHash>][/<resourceKey>]   (chain defaults to "chia")
 +// See SYSTEM.md "Digstore URN scheme".
 +
 +#ifndef NET_URL_REQUEST_DIG_URN_H_
@@ -926,7 +939,7 @@
 +  bool valid = false;
 +};
 +
-+// Parse a dig:// URL or a urn:dig: string. Returns a ParsedUrn with valid=false
++// Parse a chia:// URL or a urn:dig: string. Returns a ParsedUrn with valid=false
 +// on any malformed input.
 +NET_EXPORT ParsedUrn ParseDigUrn(const std::string& input);
 +

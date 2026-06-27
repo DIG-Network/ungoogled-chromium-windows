@@ -1,0 +1,51 @@
+# DIG Browser privacy defaults (Brave-parity, Tier 1).
+#
+# Privacy-first out-of-the-box defaults, flipped at their registration
+# sites. These only change DEFAULTS; every one remains user-overridable.
+#
+#   * default_dns_over_https_config_source.cc - encrypted DNS on by
+#     default: DNS-over-HTTPS in Secure mode (fail-closed) with a
+#     privacy-respecting resolver template (Cloudflare). The runtime
+#     default-setter (SetDefaultPrefValue) is the effective default, so
+#     it is changed here rather than at RegisterPrefs.
+#   * preloading_prefs.cc - no network prediction / preconnect / prefetch
+#     by default (kNetworkPredictionOptions = kDisabled).
+#
+# Companion defaults captured elsewhere: Do-Not-Track on and HTTPS-Only
+# Mode on (windows-dig-browser-ux.patch, browser_ui_prefs.cc).
+--- a/chrome/browser/net/default_dns_over_https_config_source.cc
++++ b/chrome/browser/net/default_dns_over_https_config_source.cc
+@@ -27,9 +27,16 @@
+   // result in reentrancy and mess up registration between this code and
+   // NetworkService creation.
+   if (set_up_pref_defaults) {
++    // DIG Browser: privacy-first default -- encrypted DNS (DNS-over-HTTPS) in
++    // Secure mode, fail-closed, using a privacy-respecting resolver by default.
++    // Secure mode requires a template, so set one as the default too. Users can
++    // change the resolver or relax the mode in settings.
+     local_state->SetDefaultPrefValue(prefs::kDnsOverHttpsMode,
+                                      base::Value(SecureDnsConfig::ModeToString(
+-                                         net::SecureDnsMode::kOff)));
++                                         net::SecureDnsMode::kSecure)));
++    local_state->SetDefaultPrefValue(
++        prefs::kDnsOverHttpsTemplates,
++        base::Value("https://cloudflare-dns.com/dns-query"));
+   }
+ }
+ 
+--- a/chrome/browser/preloading/preloading_prefs.cc
++++ b/chrome/browser/preloading/preloading_prefs.cc
+@@ -14,9 +14,12 @@
+ namespace prefetch {
+ void RegisterPredictionOptionsProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
++  // DIG Browser: privacy-first default -- no network prediction / preconnect /
++  // prefetch (these phone out to third parties before you click). Disabled by
++  // default; users can re-enable preloading in settings.
+   registry->RegisterIntegerPref(
+       prefs::kNetworkPredictionOptions,
+-      static_cast<int>(NetworkPredictionOptions::kDefault),
++      static_cast<int>(NetworkPredictionOptions::kDisabled),
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+ }
+ 

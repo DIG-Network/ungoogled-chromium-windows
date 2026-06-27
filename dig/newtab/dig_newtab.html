@@ -143,7 +143,7 @@
       <div class="bar">
         <span class="lead-ic" id="lead" aria-hidden="true">&#128269;</span>
         <input id="q" type="text" autofocus spellcheck="false"
-               placeholder="Search the web, or open a dig:// store" aria-label="Search or DIG address">
+               placeholder="Search the web, or open a chia:// store" aria-label="Search or DIG address">
         <button class="go" type="submit" id="goBtn">Search</button>
       </div>
     </form>
@@ -156,13 +156,13 @@
       <a class="qa" href="https://dig.net"><span class="e">&#9670;</span> DIG Network</a>
       <a class="qa" href="https://hub.dig.net/new"><span class="e">&#10133;</span> Publish</a>
       <a class="qa" href="https://docs.dig.net"><span class="e">&#128214;</span> Docs</a>
-      <a class="qa" id="qaSettings" href="dig://settings"><span class="e">&#9881;&#65039;</span> Settings</a>
+      <a class="qa" id="qaSettings" href="chia://settings"><span class="e">&#9881;&#65039;</span> Settings</a>
     </nav>
 
     <section class="section">
       <span class="eyebrow">On the DIG Network</span>
       <div class="grid">
-        <a class="fcard" href="dig://urn:dig:chia:1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907/index.html">
+        <a class="fcard" href="chia://urn:dig:chia:1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907/index.html">
           <div class="row"><div class="well">&#127974;</div>
             <div><div class="nm">XCH Annuity</div><div class="sid">1426d906&hellip;359907</div></div></div>
           <p class="ds">Private, self-custodial annuities &mdash; a legacy secured by Chia.</p>
@@ -180,7 +180,7 @@
 
   <footer>
     <p class="trust"><span class="seal">Built on Chia</span> &middot; Censorship-resistant &middot; Permanent
-      &mdash; every dig:// page is <b>Merkle-verified</b> against its on-chain root and decrypted on this device.</p>
+      &mdash; every chia:// page is <b>Merkle-verified</b> against its on-chain root and decrypted on this device.</p>
   </footer>
 
   <script>
@@ -189,7 +189,7 @@
           mode=document.getElementById('mode'), lead=document.getElementById('lead'), goBtn=document.getElementById('goBtn');
       function classify(v){
         v=v.trim(); if(!v) return 'search';
-        if(/^dig:\/\//i.test(v)||/^urn:dig:/i.test(v)) return 'dig';
+        if(/^chia:\/\//i.test(v)||/^urn:dig:/i.test(v)) return 'dig';
         if(/^[0-9a-f]{64}([:\/].*)?$/i.test(v)) return 'dig';
         if(/^https?:\/\//i.test(v)) return 'url';
         if(/^[^\s]+\.[^\s]{2,}([\/?#].*)?$/.test(v)&&!/\s/.test(v)) return 'url';
@@ -204,11 +204,11 @@
       q.addEventListener('input',reflect);
       form.addEventListener('submit',function(e){
         e.preventDefault(); var v=(q.value||'').trim(); if(!v) return; var k=classify(v);
-        if(k==='dig'){v=v.replace(/^dig:\/\//i,'').replace(/^urn:dig:/i,'');location.href='dig://'+v;}
+        if(k==='dig'){v=v.replace(/^chia:\/\//i,'').replace(/^urn:dig:/i,'');location.href='chia://'+v;}
         else if(k==='url'){location.href=/^https?:\/\//i.test(v)?v:'https://'+v;}
         else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}
       });
-      function openWallet(e){if(e)e.preventDefault();location.href='dig://wallet';}
+      function openWallet(e){if(e)e.preventDefault();location.href='chia://wallet';}
       document.getElementById('wallet').addEventListener('click',openWallet);
       document.getElementById('qaWallet').addEventListener('click',openWallet);
     })();
