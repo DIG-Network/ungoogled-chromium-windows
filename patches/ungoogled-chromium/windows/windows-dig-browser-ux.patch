@@ -13,8 +13,12 @@
 #     navigations and subresources;
 #   * theme_service.cc — seed the DIG palette (dark + brand violet #5800D6) on a
 #     fresh/default profile so the frame/toolbar read as DIG;
-#   * home_button.cc — the toolbar home button is the DIG coin (full-colour logo,
-#     no vector-icon re-tint); clicking it navigates home (dig.net);
+#   * home_button.cc + chrome/app/vector_icons/{BUILD.gn,dig_wallet.icon} — the
+#     toolbar (former home) button is the DIG Wallet button: it wears a wallet
+#     mark — a wallet pouch with a Chia leaf knocked out of its face (the new
+#     kDigWalletIcon monochrome toolbar vector icon, tinted by the theme like
+#     every other toolbar button); clicking it opens the built-in DIG Wallet
+#     (chia://wallet) in a compact popup;
 #   * browser_ui_prefs.cc + profile_impl.cc — show the home button and default the
 #     home page to https://dig.net/;
 #   * render_thread_impl.cc — register dig:// in the renderer as fetch/wasm-capable
@@ -57,7 +61,7 @@
  void ThemeService::Shutdown() {
 --- a/chrome/browser/ui/views/toolbar/home_button.cc
 +++ b/chrome/browser/ui/views/toolbar/home_button.cc
-@@ -19,12 +19,15 @@
+@@ -19,6 +19,8 @@
  #include "chrome/browser/ui/browser.h"
  #include "chrome/browser/ui/browser_element_identifiers.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -66,18 +70,8 @@
  #include "chrome/browser/ui/ui_features.h"
  #include "chrome/browser/ui/view_ids.h"
  #include "chrome/browser/ui/views/chrome_layout_provider.h"
- #include "chrome/browser/ui/views/toolbar/pinned_action_toolbar_button_menu_model.h"
- #include "chrome/common/pref_names.h"
- #include "chrome/grit/generated_resources.h"
-+#include "chrome/grit/theme_resources.h"
- #include "components/prefs/pref_service.h"
- #include "components/user_prefs/user_prefs.h"
- #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
-@@ -32,8 +35,11 @@
- #include "ui/base/l10n/l10n_util.h"
- #include "ui/base/metadata/metadata_header_macros.h"
+@@ -34,6 +36,8 @@
  #include "ui/base/metadata/metadata_impl_macros.h"
-+#include "ui/base/models/image_model.h"
  #include "ui/base/models/menu_model.h"
  #include "ui/base/mojom/dialog_button.mojom.h"
 +#include "ui/base/window_open_disposition.h"
@@ -85,7 +79,7 @@
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
  #include "ui/views/controls/styled_label.h"
-@@ -148,17 +154,46 @@
+@@ -148,17 +152,47 @@
                          kActionHome),
                      nullptr),
        prefs_(browser_window_interface->GetProfile()->GetPrefs()),
@@ -97,16 +91,17 @@
 -  SetVectorIcons(kNavigateHomeChromeRefreshIcon, kNavigateHomeTouchIcon);
 -  SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_HOME));
 -  GetViewAccessibility().SetName(l10n_util::GetStringUTF16(IDS_ACCNAME_HOME));
-+  // DIG Browser: the home button is the DIG coin. Show the full-color DIG logo
-+  // (not the monochrome house vector icon) — we intentionally do NOT call
-+  // SetVectorIcons, so ToolbarButton::UpdateIcon() stays a no-op and never
-+  // re-tints/clobbers this image. The button's own circular ink-drop highlight
-+  // gives it the "circular DIG coin" feel; clicking navigates to dig.net (home).
-+  SetImageModel(views::Button::STATE_NORMAL,
-+                ui::ImageModel::FromResourceId(IDR_PRODUCT_LOGO_16));
-+  // DIG Browser: the DIG coin opens the built-in DIG Wallet in a compact popup
-+  // window -- it is the wallet button, not a navigate-home button. Override the
-+  // home-navigation PressedCallback the toolbar wired in with our own action.
++  // DIG Browser: this toolbar button opens the built-in Chia/DIG Wallet, so it
++  // wears a wallet mark — a wallet pouch with a Chia leaf knocked out of its
++  // face (kDigWalletIcon). It is a standard monochrome toolbar vector icon, so
++  // SetVectorIcons lets ToolbarButton::UpdateIcon() tint it with the active
++  // toolbar theme color and size it like every other toolbar button (back,
++  // forward, reload). The leaf-over-wallet silhouette reads unmistakably as a
++  // Chia wallet at the toolbar size.
++  SetVectorIcons(kDigWalletIcon, kDigWalletIcon);
++  // DIG Browser: the wallet button opens the built-in DIG Wallet in a compact
++  // popup window -- it is the wallet button, not a navigate-home button.
++  // Override the home-navigation PressedCallback the toolbar wired in.
 +  SetCallback(
 +      base::BindRepeating(&HomeButton::OpenDigWallet, base::Unretained(this)));
 +  SetTooltipText(u"DIG Wallet");
@@ -158,6 +153,79 @@
    HomePageUndoBubbleCoordinator coordinator_;
  
    base::WeakPtrFactory<HomeButton> weak_ptr_factory_{this};
+--- a/chrome/app/vector_icons/BUILD.gn
++++ b/chrome/app/vector_icons/BUILD.gn
+@@ -74,6 +74,7 @@
+     "developer_tools.icon",
+     "devices.icon",
+     "devices_chrome_refresh.icon",
++    "dig_wallet.icon",
+     "dock_to_left.icon",
+     "dock_to_left_spark.icon",
+     "dock_to_right.icon",
+--- /dev/null
++++ b/chrome/app/vector_icons/dig_wallet.icon
+@@ -0,0 +1,60 @@
++// Copyright 2024 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// DIG Browser: the toolbar wallet button. A wallet pouch silhouette with a
++// Chia leaf knocked out of its face (negative space), so the mark reads
++// unmistakably as a CHIA WALLET even as a single monochrome silhouette
++// tinted by the toolbar theme. Drawn on the standard 20dp toolbar canvas
++// (matches navigate_home_chrome_refresh.icon).
++//
++// FILL_RULE_NONZERO with opposing winding: the wallet body is wound
++// clockwise (filled); the leaf and the round clasp hole are wound
++// counter-clockwise so they punch through as holes. Every hole lies fully
++// inside the body, so coverage there is +1 (body) -1 (hole) = 0 → it shows
++// the tinted background through. The leaf's center vein is wound clockwise
++// again so it fills back as a hairline, giving the classic Chia leaf read.
++
++CANVAS_DIMENSIONS, 20,
++FILL_RULE_NONZERO,
++
++// --- Wallet body: a rounded pouch from (2.5,5) to (17.5,16), clockwise. ---
++MOVE_TO, 4.5, 5,
++H_LINE_TO, 15.5,
++CUBIC_TO, 16.6, 5, 17.5, 5.9, 17.5, 7,
++V_LINE_TO, 14,
++CUBIC_TO, 17.5, 15.1, 16.6, 16, 15.5, 16,
++H_LINE_TO, 4.5,
++CUBIC_TO, 3.4, 16, 2.5, 15.1, 2.5, 14,
++V_LINE_TO, 7,
++CUBIC_TO, 2.5, 5.9, 3.4, 5, 4.5, 5,
++CLOSE,
++
++// --- Round clasp hole on the right edge of the pouch, centered at
++// (14.4, 10.5), radius 1.0. Counter-clockwise (top -> left -> bottom ->
++// right -> top) so it subtracts a small circular clasp eyelet. ---
++MOVE_TO, 14.4, 9.5,
++CUBIC_TO, 13.85, 9.5, 13.4, 9.95, 13.4, 10.5,
++CUBIC_TO, 13.4, 11.05, 13.85, 11.5, 14.4, 11.5,
++CUBIC_TO, 14.95, 11.5, 15.4, 11.05, 15.4, 10.5,
++CUBIC_TO, 15.4, 9.95, 14.95, 9.5, 14.4, 9.5,
++CLOSE,
++
++// --- Chia leaf knocked out of the pouch face, centered around (8.3, 10.6).
++// An almond/teardrop: pointed at the top, bellied to the sides, rounded at
++// the base. Counter-clockwise (tip -> down LEFT side -> base -> up RIGHT
++// side -> tip) so it subtracts a leaf-shaped hole. ---
++MOVE_TO, 8.3, 7.6,
++CUBIC_TO, 6.95, 9.0, 6.2, 10.25, 6.2, 11.35,
++CUBIC_TO, 6.2, 12.51, 7.14, 13.45, 8.3, 13.45,
++CUBIC_TO, 9.46, 13.45, 10.4, 12.51, 10.4, 11.35,
++CUBIC_TO, 10.4, 10.25, 9.65, 9.0, 8.3, 7.6,
++CLOSE,
++
++// --- Leaf center vein: a thin sliver down the leaf so the silhouette fills
++// back as a hairline vein (classic Chia look). Stops short of the base. ---
++MOVE_TO, 8.15, 8.8,
++V_LINE_TO, 12.7,
++H_LINE_TO, 8.45,
++V_LINE_TO, 8.8,
++CLOSE
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
 @@ -116,9 +116,12 @@
