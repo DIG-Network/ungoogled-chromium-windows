@@ -3,190 +3,205 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#5800D6">
-<title>DIG</title>
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<title>DIG Network</title>
 <style>
-  /* dig.net brand kit — fonts (fall back cleanly if the CDN is unreachable). */
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+  /* Space Grotesk for the brand/display (falls back cleanly if the CDN is stripped at build). */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
   :root{
-    /* dig.net design tokens (styles/globals.css) */
-    --violet:#5800D6; --magenta:#FF00DE; --pink:#FF3DF5;
-    --grad-logo:linear-gradient(150deg,#5800D6 0%,#FF00DE 100%);
-    --grad-text:linear-gradient(100deg,#B98CFF 0%,#FF6BEE 100%);
-    --bg-void:#0A0A20; --bg-space:#101132; --bg-panel:#16153A; --bg-card:#191248; --bg-card-2:#221a59;
-    --fg1:#FFFFFF; --fg2:#C5C1E0; --fg3:#9A95C0; --fg4:#6E6A99;
-    --border-subtle:rgba(255,255,255,.08); --border-soft:rgba(138,110,255,.18);
-    --border-violet:rgba(88,0,214,.55); --border-bright:rgba(255,0,222,.60);
-    --glass:rgba(25,18,72,.55); --glass-strong:rgba(16,17,50,.82); --glass-hair:rgba(255,255,255,.06);
-    --chia:#5ECE71; --chia-line:rgba(94,206,113,.45);
-    --shadow-card:0 18px 50px rgba(0,0,0,.45); --glow-violet:0 0 40px rgba(88,0,214,.55);
+    --violet:#5800D6; --magenta:#FF00DE;
+    --grad:linear-gradient(100deg,#5800D6 0%,#FF00DE 100%);
+    --ink:#16121f; --muted:#6b6478; --faint:#9a93a8;
+    --bg:#ffffff; --soft:#f7f5fb; --line:#ece8f3; --line-2:#e2dcef;
+    --chia:#1a8f5a;
     --font-display:'Space Grotesk','Segoe UI',system-ui,sans-serif;
-    --font-body:'Open Sans',system-ui,-apple-system,sans-serif;
-    --font-mono:'Space Mono',ui-monospace,'SF Mono',Menlo,monospace;
-    --r-md:14px; --r-lg:20px; --r-xl:28px; --r-pill:999px;
+    --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --r:14px; --r-lg:20px; --pill:999px;
+    --shadow:0 1px 2px rgba(22,18,31,.05),0 8px 30px rgba(88,0,214,.06);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{
-    font-family:var(--font-body); color:var(--fg2);
-    background:#110c2f;
-    background-image:radial-gradient(120% 2300px at 50% 0%, #241062 0%, #150d36 38%, #110c2f 70%);
-    background-attachment:fixed;
-    min-height:100%; display:flex; flex-direction:column; overflow-x:hidden;
-  }
-  a{color:inherit}
-  .eyebrow{font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.18em;
-           text-transform:uppercase;color:var(--magenta)}
-  /* nav */
-  header{display:flex;align-items:center;justify-content:space-between;
-         padding:16px 26px;backdrop-filter:blur(16px) saturate(1.2);
-         background:linear-gradient(180deg,rgba(16,17,50,.45),transparent);
-         position:sticky;top:0;z-index:5}
-  .brand{display:flex;align-items:center;gap:11px;text-decoration:none}
-  .brand img{width:30px;height:30px;display:block;filter:drop-shadow(0 4px 14px rgba(120,30,220,.6))}
-  .brand .wm{font-family:var(--font-display);font-weight:700;letter-spacing:.06em;font-size:16px;color:var(--fg1)}
-  .brand .wm span{color:var(--fg3);font-weight:500}
-  .nav-actions{display:flex;align-items:center;gap:10px}
-  .btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;text-decoration:none;
-       font-family:var(--font-display);font-weight:600;font-size:13.5px;border-radius:var(--r-pill);
-       padding:10px 18px;border:1px solid transparent;transition:transform .08s,filter .15s,border-color .15s,background .15s}
+  body{font-family:var(--font-body);color:var(--ink);background:var(--bg);
+       min-height:100%;display:flex;flex-direction:column}
+  a{color:inherit;text-decoration:none}
+  /* header */
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand img{width:26px;height:26px;display:block}
+  .brand .wm{font-family:var(--font-display);font-weight:700;font-size:18px;letter-spacing:-.01em}
+  .brand .wm .n{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .brand .alpha{font-family:var(--font-display);font-weight:600;font-size:10px;letter-spacing:.02em;
+                color:var(--faint);background:var(--soft);border:1px solid var(--line);
+                border-radius:var(--pill);padding:2px 8px;line-height:1.4}
+  .actions{display:flex;align-items:center;gap:10px}
+  .btn{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:var(--font-display);
+       font-weight:600;font-size:13.5px;border-radius:var(--pill);padding:9px 16px;border:1px solid var(--line-2);
+       background:#fff;color:var(--ink);transition:border-color .15s,background .15s,transform .08s}
+  .btn:hover{border-color:var(--violet);background:var(--soft)}
   .btn:active{transform:translateY(1px)}
-  .btn-primary{background:var(--grad-logo);color:#fff;box-shadow:0 8px 30px rgba(88,0,214,.5)}
-  .btn-primary:hover{filter:brightness(1.08);box-shadow:0 8px 34px rgba(255,0,222,.5)}
-  .btn-ghost{background:var(--glass);color:var(--fg1);border-color:var(--border-soft);
-             backdrop-filter:blur(10px) saturate(1.1)}
-  .btn-ghost:hover{border-color:var(--border-violet);background:var(--bg-card-2)}
-  .btn .wd{width:9px;height:9px;border-radius:50%;background:var(--grad-logo)}
-  /* hero */
-  main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-       width:100%;max-width:920px;margin:0 auto;padding:24px 22px 0;text-align:center}
-  .mark{width:92px;height:92px;margin:0 0 22px;filter:drop-shadow(0 0 40px rgba(88,0,214,.55))}
-  h1{font-family:var(--font-display);font-weight:800;letter-spacing:-.03em;line-height:1.05;
-     font-size:clamp(40px,7vw,68px);margin:14px 0 0;color:var(--fg1)}
-  h1 .gt{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .lead{font-size:18px;line-height:1.6;color:var(--fg2);margin:14px auto 30px;max-width:560px}
+  .btn-primary{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 6px 20px rgba(88,0,214,.22)}
+  .btn-primary:hover{filter:brightness(1.06);background:var(--grad)}
+  .btn .dot{width:8px;height:8px;border-radius:50%;background:var(--grad)}
+  /* main */
+  main{flex:1;display:flex;flex-direction:column;align-items:center;width:100%;
+       max-width:760px;margin:0 auto;padding:6vh 22px 0;text-align:center}
+  .logo{width:60px;height:60px;margin:0 0 18px}
+  h1{font-family:var(--font-display);font-weight:700;letter-spacing:-.03em;line-height:1.05;
+     font-size:clamp(34px,6vw,52px);margin:0}
+  h1 .n{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .tag{font-size:16px;color:var(--muted);margin:12px auto 26px;max-width:48ch}
+  /* switcher */
+  .switch{display:inline-flex;background:var(--soft);border:1px solid var(--line);border-radius:var(--pill);
+          padding:4px;margin:0 auto 22px;gap:2px}
+  .switch button{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--muted);
+                 background:transparent;border:0;cursor:pointer;border-radius:var(--pill);padding:8px 18px;transition:.15s}
+  .switch button[aria-selected="true"]{background:#fff;color:var(--violet);box-shadow:var(--shadow)}
+  .panel{width:100%}
+  .panel[hidden]{display:none}
   /* search */
-  form{position:relative;width:100%;max-width:660px;margin:0 auto}
-  .bar{display:flex;align-items:center;gap:10px;background:var(--glass-strong);
-       border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:7px 8px 7px 18px;
-       backdrop-filter:blur(12px);transition:border-color .15s,box-shadow .15s}
-  .bar:focus-within{border-color:var(--border-violet);box-shadow:0 0 0 4px rgba(88,0,214,.22)}
-  .bar .lead-ic{display:flex;color:var(--fg4);font-size:17px}
-  .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--fg1);
-             font:500 16px var(--font-body);padding:13px 0}
-  .bar input::placeholder{color:var(--fg4)}
+  form{position:relative;width:100%;max-width:620px;margin:0 auto}
+  .bar{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--line-2);
+       border-radius:var(--r-lg);padding:6px 8px 6px 18px;box-shadow:var(--shadow);transition:border-color .15s,box-shadow .15s}
+  .bar:focus-within{border-color:var(--violet);box-shadow:0 0 0 4px rgba(88,0,214,.12)}
+  .bar .ic{display:flex;color:var(--faint);font-size:17px}
+  .bar input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font:500 16px var(--font-body);padding:13px 0}
+  .bar input::placeholder{color:var(--faint)}
   .go{border:0;cursor:pointer;color:#fff;font-family:var(--font-display);font-weight:600;font-size:14px;
-      padding:13px 24px;border-radius:var(--r-md);background:var(--grad-logo);
-      box-shadow:0 6px 22px rgba(88,0,214,.45);transition:filter .15s,transform .08s}
-  .go:hover{filter:brightness(1.08)} .go:active{transform:translateY(1px)}
-  .mode{margin:12px 2px 0;font-size:13px;color:var(--fg4);height:18px;font-family:var(--font-body)}
-  .mode b{color:var(--fg3);font-weight:600}
-  .mode.dig b{color:#C9A6FF}
-  .chia-chip{display:inline-flex;align-items:center;gap:8px;margin-top:22px;
-             font-family:var(--font-display);font-size:12.5px;font-weight:600;color:var(--fg3);
-             background:var(--glass);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding:7px 14px}
-  .chia-chip .leaf{width:8px;height:8px;border-radius:50%;background:var(--chia);box-shadow:0 0 10px rgba(94,206,113,.8)}
-  /* quick actions */
-  .quick{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:30px 0 0}
-  .qa{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--fg1);
-      font-family:var(--font-display);font-weight:500;font-size:13.5px;
-      background:var(--glass);border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:11px 16px;
-      transition:transform .1s,border-color .15s,background .15s}
-  .qa:hover{transform:translateY(-2px);border-color:var(--border-violet);background:var(--bg-card-2)}
-  .qa .e{font-size:15px}
-  /* featured cards (.fcard) */
-  .section{width:100%;max-width:780px;margin:46px auto 0;text-align:left}
-  .section .eyebrow{display:block;margin:0 0 14px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
-  .fcard{display:block;text-decoration:none;color:var(--fg1);background:var(--bg-card);
-         border:1px solid var(--border-soft);border-radius:var(--r-xl);padding:18px;
-         box-shadow:var(--shadow-card);transition:transform .12s,border-color .15s,background .15s}
-  .fcard:hover{transform:translateY(-3px);border-color:var(--border-violet);background:var(--bg-card-2)}
-  .fcard .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
-  .fcard .well{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
-               font-size:20px;background:rgba(88,0,214,.22);border:1px solid var(--border-soft)}
-  .fcard .nm{font-family:var(--font-display);font-weight:600;font-size:15.5px;line-height:1.1}
-  .fcard .sid{font:400 11px var(--font-mono);color:var(--fg4);margin-top:3px}
-  .fcard .ds{font-size:13px;color:var(--fg2);line-height:1.5;margin:0}
-  .vchip{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-family:var(--font-display);
-         font-size:10.5px;font-weight:600;color:var(--chia);
-         background:rgba(94,206,113,.10);border:1px solid var(--chia-line);border-radius:var(--r-pill);padding:3px 10px}
-  .vchip.ghost{color:var(--fg3);background:var(--glass);border-color:var(--border-soft)}
+      padding:13px 22px;border-radius:var(--r);background:var(--grad);transition:filter .15s,transform .08s}
+  .go:hover{filter:brightness(1.07)} .go:active{transform:translateY(1px)}
+  .mode{margin:12px 2px 0;font-size:13px;color:var(--faint);height:18px}
+  .mode b{color:var(--muted);font-weight:600}
+  .mode.dig b{color:var(--violet)}
+  .hint{margin:18px 0 0;font-size:12.5px;color:var(--faint)}
+  /* app directory */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin:0 auto;text-align:left}
+  .app{display:block;background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;
+       box-shadow:var(--shadow);transition:transform .12s,border-color .15s}
+  .app:hover{transform:translateY(-3px);border-color:var(--violet)}
+  .app .row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .app .well{width:42px;height:42px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
+             font-size:21px;background:var(--soft);border:1px solid var(--line)}
+  .app .nm{font-family:var(--font-display);font-weight:600;font-size:15.5px;line-height:1.15}
+  .app .host{font-size:11.5px;color:var(--faint);margin-top:2px}
+  .app .ds{font-size:13px;color:var(--muted);line-height:1.5;margin:0}
+  .app .chip{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-family:var(--font-display);
+             font-size:10.5px;font-weight:600;color:var(--violet);background:var(--soft);
+             border:1px solid var(--line-2);border-radius:var(--pill);padding:3px 10px}
+  .app .chip.dig{color:var(--chia);background:rgba(26,143,90,.08);border-color:rgba(26,143,90,.25)}
+  .dir-foot{margin:18px 0 0;font-size:13px;color:var(--muted)}
+  .dir-foot a{color:var(--violet);font-weight:600}
   /* footer */
-  footer{margin-top:auto;padding:28px 24px;text-align:center}
-  .trust{font-size:12.5px;color:var(--fg4);font-family:var(--font-body)}
-  .trust .seal{font-family:var(--font-display);font-weight:600;color:var(--chia)}
-  .trust b{color:var(--fg3);font-weight:600}
-  @media(max-width:560px){.section{margin-top:32px}}
+  footer{margin-top:auto;padding:26px 24px;text-align:center}
+  .links{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;font-family:var(--font-display);
+         font-size:13px;font-weight:500;color:var(--muted)}
+  .links a:hover{color:var(--violet)}
+  .trust{margin-top:12px;font-size:12px;color:var(--faint)}
+  .trust .leaf{color:var(--chia);font-weight:600}
+  @media(max-width:560px){main{padding-top:4vh}}
 </style>
 </head>
 <body>
   <header>
     <a class="brand" href="https://dig.net" title="DIG Network">
-      <img src="dig_logo_256.png" alt="DIG">
-      <span class="wm">DIG<span> NETWORK</span></span>
+      <img src="dig_logo_256.png" alt="">
+      <span class="wm">DIG<span class="n">Network</span></span>
+      <span class="alpha" title="Pre-release &mdash; expect rough edges">alpha</span>
     </a>
-    <nav class="nav-actions">
-      <a class="btn btn-ghost wallet" id="wallet" href="#" title="Your Chia wallet"><span class="wd"></span>Wallet</a>
-      <a class="btn btn-primary" href="https://hub.dig.net/new" title="Publish on DIGHUb">&#43;&nbsp;New project</a>
+    <nav class="actions">
+      <a class="btn wallet" id="wallet" href="#" title="Your Chia wallet"><span class="dot"></span>Wallet</a>
+      <a class="btn btn-primary" href="https://hub.dig.net/new" title="Publish on DIGHUb">&#43;&nbsp;Publish</a>
     </nav>
   </header>
 
   <main>
-    <img class="mark" src="dig_logo_256.png" alt="DIG" aria-hidden="true">
-    <span class="eyebrow">Layer&nbsp;2 &middot; Provable &middot; Private</span>
-    <h1>Store the <span class="gt">world&rsquo;s data</span></h1>
-    <p class="lead">Browse the web, or open the DIG Network &mdash; where every page is proven on&#8209;chain and decrypted on your device.</p>
+    <img class="logo" src="dig_logo_256.png" alt="DIG Network" aria-hidden="true">
+    <h1>DIG<span class="n">Network</span></h1>
+    <p class="tag">Your window into the DIG Network &mdash; the unstoppable web. Open apps and stores by name, or search the web.</p>
 
-    <form id="omni" autocomplete="off">
-      <div class="bar">
-        <span class="lead-ic" id="lead" aria-hidden="true">&#128269;</span>
-        <input id="q" type="text" autofocus spellcheck="false"
-               placeholder="Search the web, or open a chia:// store" aria-label="Search or DIG address">
-        <button class="go" type="submit" id="goBtn">Search</button>
-      </div>
-    </form>
-    <div class="mode" id="mode">Paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network</div>
+    <div class="switch" role="tablist" aria-label="Search or apps">
+      <button id="tabApps" role="tab" aria-selected="true" aria-controls="panelApps">App&nbsp;Store</button>
+      <button id="tabSearch" role="tab" aria-selected="false" aria-controls="panelSearch">Search</button>
+    </div>
 
-    <span class="chia-chip"><span class="leaf"></span>Powered by Chia</span>
-
-    <nav class="quick">
-      <a class="qa" id="qaWallet" href="#"><span class="e">&#128091;</span> Wallet</a>
-      <a class="qa" href="https://dig.net"><span class="e">&#9670;</span> DIG Network</a>
-      <a class="qa" href="https://hub.dig.net/new"><span class="e">&#10133;</span> Publish</a>
-      <a class="qa" href="https://docs.dig.net"><span class="e">&#128214;</span> Docs</a>
-      <a class="qa" id="qaSettings" href="chia://settings"><span class="e">&#9881;&#65039;</span> Settings</a>
-    </nav>
-
-    <section class="section">
-      <span class="eyebrow">On the DIG Network</span>
+    <!-- App Store (primary) -->
+    <section class="panel" id="panelApps" role="tabpanel" aria-labelledby="tabApps">
       <div class="grid">
-        <a class="fcard" href="chia://urn:dig:chia:1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907/index.html">
-          <div class="row"><div class="well">&#127974;</div>
-            <div><div class="nm">XCH Annuity</div><div class="sid">1426d906&hellip;359907</div></div></div>
-          <p class="ds">Private, self-custodial annuities &mdash; a legacy secured by Chia.</p>
-          <span class="vchip"><span>&#10003;</span> Chia-verified</span>
+        <a class="app" href="https://hub.dig.net">
+          <div class="row"><div class="well">&#9883;&#65039;</div>
+            <div><div class="nm">DIGHUb</div><div class="host">hub.dig.net</div></div></div>
+          <p class="ds">Publish &amp; manage your sites on the DIG Network &mdash; your wallet is your account.</p>
+          <span class="chip">Open &#8599;</span>
         </a>
-        <a class="fcard" href="https://hub.dig.net/new">
-          <div class="row"><div class="well">&#10133;</div>
-            <div><div class="nm">Publish on DIGHUb</div><div class="sid">hub.dig.net</div></div></div>
-          <p class="ds">Publish like you push code &mdash; init, add, commit, push. Your wallet is your account.</p>
-          <span class="vchip ghost">New project &rarr;</span>
+        <a class="app" href="https://xchannuity.app">
+          <div class="row"><div class="well">&#127974;</div>
+            <div><div class="nm">XCH Annuity</div><div class="host">xchannuity.app</div></div></div>
+          <p class="ds">Private, self-custodial annuities &mdash; a legacy secured by Chia.</p>
+          <span class="chip">Open &#8599;</span>
+        </a>
+        <a class="app" href="https://v2.tibetswap.io">
+          <div class="row"><div class="well">&#128176;</div>
+            <div><div class="nm">TibetSwap</div><div class="host">v2.tibetswap.io</div></div></div>
+          <p class="ds">Swap XCH &harr; tokens. Get <b>DIG</b> here to publish on the DIG Network.</p>
+          <span class="chip">Buy DIG &#8599;</span>
+        </a>
+        <a class="app" href="https://docs.dig.net">
+          <div class="row"><div class="well">&#128214;</div>
+            <div><div class="nm">Docs</div><div class="host">docs.dig.net</div></div></div>
+          <p class="ds">Learn the chia:// protocol, the CLI, and how to build on the DIG Network.</p>
+          <span class="chip">Read &#8599;</span>
         </a>
       </div>
+      <p class="dir-foot">Built something on DIG? <a href="https://hub.dig.net/new">Publish on DIGHUb &#8599;</a></p>
     </section>
+
+    <!-- Search -->
+    <section class="panel" id="panelSearch" role="tabpanel" aria-labelledby="tabSearch" hidden>
+      <form id="omni" autocomplete="off">
+        <div class="bar">
+          <span class="ic" id="lead" aria-hidden="true">&#128269;</span>
+          <input id="q" type="text" spellcheck="false"
+                 placeholder="Search the web, or open a chia:// store" aria-label="Search or DIG address">
+          <button class="go" type="submit" id="goBtn">Search</button>
+        </div>
+      </form>
+      <div class="mode" id="mode">On the DIG Network? Paste a <b>store id</b> or <b>chia://&hellip;</b>. Anything else searches the web.</div>
+      <p class="hint">Web searches go to DuckDuckGo &mdash; private by default.</p>
+    </section>
+
+    <span class="chip" style="margin-top:26px;color:var(--chia);background:rgba(26,143,90,.08);border-color:rgba(26,143,90,.25)">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--chia);display:inline-block"></span>&nbsp;Powered by Chia</span>
   </main>
 
   <footer>
-    <p class="trust"><span class="seal">Built on Chia</span> &middot; Censorship-resistant &middot; Permanent
-      &mdash; every chia:// page is <b>Merkle-verified</b> against its on-chain root and decrypted on this device.</p>
+    <nav class="links">
+      <a href="https://dig.net">DIG Network</a>
+      <a href="https://hub.dig.net">DIGHUb</a>
+      <a href="https://docs.dig.net">Docs</a>
+      <a href="https://v2.tibetswap.io">Buy DIG on TibetSwap</a>
+      <a href="chia://settings">Settings</a>
+    </nav>
+    <p class="trust"><span class="leaf">Built on Chia</span> &middot; every chia:// page is Merkle-verified on its on-chain root and decrypted on this device.</p>
   </footer>
 
   <script>
     (function () {
-      var form=document.getElementById('omni'), q=document.getElementById('q'),
-          mode=document.getElementById('mode'), lead=document.getElementById('lead'), goBtn=document.getElementById('goBtn');
+      // Search ⇄ App Store switcher.
+      var tabApps=document.getElementById('tabApps'), tabSearch=document.getElementById('tabSearch'),
+          panelApps=document.getElementById('panelApps'), panelSearch=document.getElementById('panelSearch'),
+          q=document.getElementById('q');
+      function select(which){
+        var apps=which==='apps';
+        tabApps.setAttribute('aria-selected',apps); tabSearch.setAttribute('aria-selected',!apps);
+        panelApps.hidden=!apps; panelSearch.hidden=apps;
+        if(!apps && q){ q.focus(); }
+      }
+      tabApps.addEventListener('click',function(){select('apps');});
+      tabSearch.addEventListener('click',function(){select('search');});
+
+      // Omnibox: dig store / chia:// -> DIG Network; URL -> go; everything else -> DuckDuckGo.
+      var form=document.getElementById('omni'), mode=document.getElementById('mode'),
+          lead=document.getElementById('lead'), goBtn=document.getElementById('goBtn');
       function classify(v){
         v=v.trim(); if(!v) return 'search';
         if(/^chia:\/\//i.test(v)||/^urn:dig:/i.test(v)) return 'dig';
@@ -199,7 +214,7 @@
         var k=classify(q.value);
         if(k==='dig'){mode.className='mode dig';mode.innerHTML='Opens on the <b>DIG Network</b> &mdash; verified on Chia';lead.innerHTML='&#9670;';goBtn.textContent='Open';}
         else if(k==='url'){mode.className='mode';mode.innerHTML='Go to <b>'+q.value.trim().replace(/[<>&]/g,'')+'</b>';lead.innerHTML='&#127760;';goBtn.textContent='Go';}
-        else{mode.className='mode';mode.innerHTML='Paste a <b>store id</b> or <b>urn:dig:chia:&hellip;</b> to open it on the DIG Network';lead.innerHTML='&#128269;';goBtn.textContent='Search';}
+        else{mode.className='mode';mode.innerHTML='Searches the web with <b>DuckDuckGo</b>';lead.innerHTML='&#128269;';goBtn.textContent='Search';}
       }
       q.addEventListener('input',reflect);
       form.addEventListener('submit',function(e){
@@ -208,9 +223,9 @@
         else if(k==='url'){location.href=/^https?:\/\//i.test(v)?v:'https://'+v;}
         else{location.href='https://duckduckgo.com/?q='+encodeURIComponent(v);}
       });
+
       function openWallet(e){if(e)e.preventDefault();location.href='chia://wallet';}
       document.getElementById('wallet').addEventListener('click',openWallet);
-      document.getElementById('qaWallet').addEventListener('click',openWallet);
     })();
   </script>
 </body>
