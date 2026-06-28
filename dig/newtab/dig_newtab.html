@@ -103,13 +103,13 @@
 </head>
 <body>
   <header>
-    <a class="brand" href="https://dig.net" title="DIG Network">
+    <a class="brand" href="chia://home" title="DIG Browser home">
       <img src="dig_logo_256.png" alt="">
       <span class="wm">DIG<span class="n">Network</span></span>
       <span class="alpha" title="Pre-release &mdash; expect rough edges">alpha</span>
     </a>
     <nav class="actions">
-      <a class="btn wallet" id="wallet" href="#" title="Your Chia wallet"><span class="dot"></span>Wallet</a>
+      <a class="btn wallet" id="wallet" href="#" title="DIG Wallet &mdash; your Chia wallet, built into DIG Browser"><span class="dot"></span>Wallet</a>
       <a class="btn btn-primary" href="https://hub.dig.net/new" title="Publish on DIGHUb">&#43;&nbsp;Publish</a>
     </nav>
   </header>
@@ -117,14 +117,14 @@
   <main>
     <img class="logo" src="dig_logo_256.png" alt="DIG Network" aria-hidden="true">
     <h1>DIG<span class="n">Network</span></h1>
-    <p class="tag">Your window into the DIG Network &mdash; the unstoppable web. Open apps and stores by name, or search the web.</p>
+    <p class="tag">Your window into the DIG Network &mdash; the unstoppable web. Open a store by its address or id, or search the web.</p>
 
     <div class="switch" role="tablist" aria-label="Search or apps">
-      <button id="tabApps" role="tab" aria-selected="true" aria-controls="panelApps">App&nbsp;Store</button>
+      <button id="tabApps" role="tab" aria-selected="true" aria-controls="panelApps">Apps</button>
       <button id="tabSearch" role="tab" aria-selected="false" aria-controls="panelSearch">Search</button>
     </div>
 
-    <!-- App Store (primary) -->
+    <!-- Apps directory (primary) -->
     <section class="panel" id="panelApps" role="tabpanel" aria-labelledby="tabApps">
       <div class="grid">
         <a class="app" href="https://hub.dig.net">
@@ -142,8 +142,8 @@
         <a class="app" href="https://v2.tibetswap.io">
           <div class="row"><div class="well">&#128176;</div>
             <div><div class="nm">TibetSwap</div><div class="host">v2.tibetswap.io</div></div></div>
-          <p class="ds">Swap XCH &harr; tokens. Get <b>DIG</b> here to publish on the DIG Network.</p>
-          <span class="chip">Buy DIG &#8599;</span>
+          <p class="ds">Swap XCH &harr; tokens. Get <b>$DIG</b> here to publish on the DIG Network.</p>
+          <span class="chip">Get $DIG &#8599;</span>
         </a>
         <a class="app" href="https://docs.dig.net">
           <div class="row"><div class="well">&#128214;</div>
@@ -175,10 +175,10 @@
 
   <footer>
     <nav class="links">
-      <a href="https://dig.net">DIG Network</a>
+      <a href="https://dig.net">DIG Network &#8599;</a>
       <a href="https://hub.dig.net">DIGHUb</a>
       <a href="https://docs.dig.net">Docs</a>
-      <a href="https://v2.tibetswap.io">Buy DIG on TibetSwap</a>
+      <a href="https://v2.tibetswap.io">Get $DIG on TibetSwap</a>
       <a href="chia://settings">Settings</a>
     </nav>
     <p class="trust"><span class="leaf">Built on Chia</span> &middot; every chia:// page is Merkle-verified on its on-chain root and decrypted on this device.</p>
@@ -186,7 +186,7 @@
 
   <script>
     (function () {
-      // Search ⇄ App Store switcher.
+      // Search ⇄ Apps switcher.
       var tabApps=document.getElementById('tabApps'), tabSearch=document.getElementById('tabSearch'),
           panelApps=document.getElementById('panelApps'), panelSearch=document.getElementById('panelSearch'),
           q=document.getElementById('q');
