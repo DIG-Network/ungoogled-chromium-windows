@@ -842,7 +842,7 @@
 +}  // namespace dig
 --- /dev/null
 +++ b/chrome/browser/dig/BUILD.gn
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,28 @@
 +# Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
@@ -864,6 +864,7 @@
 +    "//content/public/browser",
 +    "//mojo/public/cpp/bindings",
 +    "//mojo/public/cpp/system",
++    "//components/version_info",
 +    "//net",
 +    "//services/network/public/cpp",
 +    "//services/network/public/mojom",
@@ -1119,15 +1120,18 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,705 @@
+@@ -0,0 +1,734 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/dig/dig_url_loader_factory.h"
 +
-+#include "chrome/browser/dig/dig_home_html.inc"  // kDigHomeHtml (the DIG Home)
++#include "chrome/browser/dig/dig_about_html.inc"    // kDigAboutHtml
++#include "chrome/browser/dig/dig_home_html.inc"     // kDigHomeHtml (the DIG Home)
++#include "chrome/browser/dig/dig_welcome_html.inc"  // kDigWelcomeHtml
 +#include "chrome/browser/dig/dig_native_runtime.h"
++#include "components/version_info/version_info.h"
 +
 +#include <algorithm>
 +#include <cstdint>
@@ -1375,6 +1379,32 @@
 +    // decrypt. Every OTHER chia:// host is a store id and stays fully verified.
 +    if (url.host() == "home") {
 +      output_ = kDigHomeHtml;
++      mime_type_ = "text/html";
++      verified_ = false;  // a local page, not chain-verified content
++      SendResponse();
++      return;
++    }
++    // chia://about is the DIG Browser's branded "About DIG Browser" surface
++    // (product name, the live browser version, tagline, logo, and the signature
++    // DIG features). A trusted browser-internal page embedded in the binary —
++    // served directly, with the {{VERSION}} placeholder filled from
++    // version_info so the page always shows the running build.
++    if (url.host() == "about") {
++      output_ = kDigAboutHtml;
++      const std::string version(version_info::GetVersionNumber());
++      base::ReplaceFirstSubstringAfterOffset(&output_, 0, "{{VERSION}}",
++                                             version);
++      mime_type_ = "text/html";
++      verified_ = false;  // a local page, not chain-verified content
++      SendResponse();
++      return;
++    }
++    // chia://welcome is the DIG Browser first-run welcome tour (what DIG is,
++    // dig:// + native wallet + privacy, and a set-as-default prompt). Opened
++    // automatically on first launch; also reachable any time. Embedded in the
++    // binary and served directly.
++    if (url.host() == "welcome") {
++      output_ = kDigWelcomeHtml;
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
 +      SendResponse();

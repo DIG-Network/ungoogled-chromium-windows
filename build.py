@@ -136,6 +136,51 @@ def _apply_dig_branding(source_tree):
         except Exception as exc:  # best-effort
             get_logger().warning('DIG branding: dig_home_html.inc skipped (%s)', exc)
 
+    # Generate the embeddable branded surfaces served by the dig:// loader
+    # (dig_url_loader_factory.cc) for chia://about and chia://welcome — the DIG
+    # Browser's own "About DIG Browser" page and first-run welcome tour. Each is
+    # a single self-contained HTML resource (logo inlined as a data URI, the
+    # external Google-fonts @import dropped) compiled into the browser, mirroring
+    # how dig_home_html.inc is generated for chia://home. Single source per page:
+    # dig/about/dig_about.html and dig/welcome/dig_welcome.html.
+    def _gen_embedded_page(src_path, var_name, marker, out_rel):
+        """Inline the logo + strip the web-font @import, then emit a C++ .inc."""
+        if not src_path.exists():
+            get_logger().warning('DIG branding: %s not found; skipping %s',
+                                  src_path, out_rel)
+            return
+        try:
+            import base64
+            html = src_path.read_text(encoding=ENCODING)
+            logo256 = branding_dir / 'dig_logo_256.png'
+            if logo256.exists():
+                data_uri = ('data:image/png;base64,'
+                            + base64.b64encode(logo256.read_bytes()).decode('ascii'))
+                html = html.replace('src="dig_logo_256.png"',
+                                    'src="' + data_uri + '"')
+            html = re.sub(
+                r"\s*@import url\('https://fonts\.googleapis\.com[^']*'\);", '',
+                html)
+            inc = ('// Generated from ' + src_path.as_posix().split('/dig/', 1)[-1]
+                   + ' by build.py. Do not edit.\n'
+                   'inline constexpr char ' + var_name + '[] = R"' + marker + '('
+                   + html + ')' + marker + '";\n')
+            inc_dst = source_tree / out_rel
+            inc_dst.parent.mkdir(parents=True, exist_ok=True)
+            inc_dst.write_text(inc, encoding=ENCODING)
+            get_logger().info('DIG branding: generated %s', out_rel)
+        except Exception as exc:  # best-effort
+            get_logger().warning('DIG branding: %s skipped (%s)', out_rel, exc)
+
+    _gen_embedded_page(
+        _ROOT_DIR / 'dig' / 'about' / 'dig_about.html',
+        'kDigAboutHtml', 'DIGABOUT',
+        'chrome/browser/dig/dig_about_html.inc')
+    _gen_embedded_page(
+        _ROOT_DIR / 'dig' / 'welcome' / 'dig_welcome.html',
+        'kDigWelcomeHtml', 'DIGWELCOME',
+        'chrome/browser/dig/dig_welcome_html.inc')
+
     # Generate the embeddable injected wallet provider (window.chia, CHIP-0002),
     # compiled into the renderer and injected into every page at document start
     # by chrome_render_frame_observer.cc. Single source: dig/provider/dig_provider.js.
@@ -203,6 +248,25 @@ def _apply_dig_branding(source_tree):
             continue
         for grd in list(base_dir.rglob('*.grd')) + list(base_dir.rglob('*.grdp')):
             _rebrand_grd(grd)
+
+    # Targeted title rebrand for the chrome://version page. Its title string
+    # (IDS_VERSION_UI_TITLE) is the generic "About Version" — no product term for
+    # the <message>-body brand sweep to catch — so the tab/window reads "About
+    # Version" instead of the product. Rename it to "About DIG Browser" so the
+    # version surface is branded like every other About-style page. Tolerant:
+    # only fires if the exact stock body is present.
+    version_grdp = source_tree / 'components' / 'version_ui_strings.grdp'
+    if version_grdp.exists():
+        try:
+            vt = version_grdp.read_text(encoding=ENCODING)
+            nvt = re.sub(
+                r'(<message name="IDS_VERSION_UI_TITLE"[^>]*>)\s*About Version\s*(</message>)',
+                r'\1About DIG Browser\2', vt)
+            if nvt != vt:
+                version_grdp.write_text(nvt, encoding=ENCODING)
+                get_logger().info('DIG branding: rebranded chrome://version title')
+        except Exception as exc:  # best-effort
+            get_logger().warning('DIG branding: version title rebrand skipped (%s)', exc)
 
     # Rebrand the residual hardcoded "Google Chrome"/"The Chromium Authors" in the
     # BRANDING file's COPYRIGHT line (feeds the About-box copyright + VERSIONINFO).

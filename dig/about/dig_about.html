@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0c0718">
+<title>About DIG Browser</title>
+<style>
+  /* Space Grotesk for the brand/display (falls back cleanly if the CDN is stripped at build). */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  :root{
+    --violet:#5800D6; --magenta:#FF00DE;
+    --grad:linear-gradient(100deg,#7835EB 0%,#FF00DE 100%);
+    --ink:#ECE6F7; --muted:#B9AFD6; --faint:#7C6FA6;
+    --bg:#0c0718; --card:#140c26; --line:#241a3d; --line-2:#322455;
+    --chia:#34d27e;
+    --font-display:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+    --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --r:14px; --r-lg:20px; --pill:999px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font-body);color:var(--ink);min-height:100%;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;
+       background:radial-gradient(1200px 800px at 50% -10%,#1b0b35 0%,#0c0718 60%,#08040f 100%)}
+  a{color:inherit;text-decoration:none}
+  .card{max-width:600px;width:100%;padding:48px 40px;text-align:center}
+  .logo{width:96px;height:96px;margin:0 auto 24px;display:block;
+        filter:drop-shadow(0 12px 48px rgba(120,53,235,.45))}
+  h1{font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;
+     font-size:34px;margin:0}
+  h1 .n{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .tag{font-size:16px;color:var(--muted);margin:12px auto 28px;max-width:46ch;line-height:1.55}
+  .ver{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-display);
+       font-weight:600;font-size:14px;color:var(--ink);background:var(--card);
+       border:1px solid var(--line-2);border-radius:var(--pill);padding:9px 18px}
+  .ver .dot{width:8px;height:8px;border-radius:50%;background:var(--grad)}
+  .ver .v{color:var(--faint);font-weight:500;font-family:ui-monospace,monospace;font-size:13px}
+  .feat{display:grid;grid-template-columns:1fr;gap:10px;margin:30px auto 0;text-align:left;max-width:460px}
+  .feat .row{display:flex;align-items:flex-start;gap:13px;background:var(--card);
+             border:1px solid var(--line);border-radius:var(--r);padding:15px 17px}
+  .feat .ic{width:34px;height:34px;border-radius:10px;flex:none;display:flex;align-items:center;
+            justify-content:center;font-size:17px;background:rgba(120,53,235,.16);
+            border:1px solid var(--line-2)}
+  .feat .nm{font-family:var(--font-display);font-weight:600;font-size:14.5px}
+  .feat .ds{font-size:13px;color:var(--muted);line-height:1.5;margin:2px 0 0}
+  .links{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:30px 0 0;
+         font-family:var(--font-display);font-size:13.5px;font-weight:600}
+  .links a{color:var(--muted);transition:color .15s}
+  .links a:hover{color:#fff}
+  .copy{margin:26px 0 0;font-size:12px;color:var(--faint)}
+  .copy .leaf{color:var(--chia);font-weight:600}
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="dig_logo_256.png" alt="DIG Browser">
+    <h1>About <span class="n">DIG&nbsp;Browser</span></h1>
+    <p class="tag">A browser built on the DIG Network &mdash; the unstoppable web. Open <b>dig://</b> apps and stores by name, with a Chia wallet and private-by-default browsing built in.</p>
+
+    <div class="ver">
+      <span class="dot"></span>DIG&nbsp;Browser
+      <span class="v">{{VERSION}}</span>
+    </div>
+
+    <div class="feat">
+      <div class="row">
+        <div class="ic">&#9670;</div>
+        <div><div class="nm">In-network dig://</div>
+          <p class="ds">Open content that lives on the DIG Network, Merkle-verified on its on-chain root and decrypted on this device.</p></div>
+      </div>
+      <div class="row">
+        <div class="ic">&#9883;&#65039;</div>
+        <div><div class="nm">Native Chia wallet</div>
+          <p class="ds">Your wallet is built in &mdash; it is your account across the DIG Network. Apps connect with your approval, per site.</p></div>
+      </div>
+      <div class="row">
+        <div class="ic">&#128274;</div>
+        <div><div class="nm">Private by default</div>
+          <p class="ds">Encrypted DNS, third-party cookies blocked, no tracking telemetry, HTTPS-only &mdash; on from the first launch.</p></div>
+      </div>
+    </div>
+
+    <nav class="links">
+      <a href="https://dig.net">DIG Network</a>
+      <a href="https://hub.dig.net">DIGHUb</a>
+      <a href="https://docs.dig.net">Docs</a>
+      <a href="chia://welcome">Welcome tour</a>
+    </nav>
+
+    <p class="copy"><span class="leaf">Built on Chia</span> &middot; The DIG Network &middot; based on Chromium</p>
+  </div>
+</body>
+</html>
