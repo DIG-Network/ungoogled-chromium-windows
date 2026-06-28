@@ -29,3 +29,5 @@ ungoogled-chromium/windows/windows-dig-newtab.patch
 ungoogled-chromium/windows/windows-dig-exe-name.patch
 ungoogled-chromium/windows/windows-dig-settings-section.patch
 ungoogled-chromium/windows/windows-dig-privacy-defaults.patch
+ungoogled-chromium/windows/windows-dig-wallet-bridge.patch
+ungoogled-chromium/windows/windows-dig-search-default.patch

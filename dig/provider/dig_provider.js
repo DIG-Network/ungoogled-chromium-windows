@@ -1,15 +1,17 @@
 // DIG Browser injected wallet provider (CHIP-0002 `window.chia`).
 //
-// Injected into every page's main world at document start. It proxies CHIP-0002
-// requests to the browser's built-in Chia wallet over loopback
-// (http://127.0.0.1:9777/api/wc/request). 127.0.0.1 is a "potentially
-// trustworthy" origin, so this works from https pages without a mixed-content
-// error. Security is the wallet's per-origin approval gate: the wallet reads the
-// unspoofable HTTP Origin header and refuses key/sign methods until the user
-// approves this site in the DIG wallet's Connections view.
+// Injected into every page's main world at document start. It reaches the
+// browser's built-in Chia wallet through a NATIVE bridge — `window.__digWalletRpc`
+// (a frame-scoped Mojo pipe to the browser process, installed by the renderer
+// just before this script) — NOT the network. There is no fetch, no loopback
+// HTTP, no http/https mismatch, and crucially nothing for the page's
+// Content-Security-Policy to block, so the wallet is reachable on ANY dapp.
+//
+// Security: the browser process supplies the calling frame's UNSPOOFABLE
+// committed origin to the wallet's per-origin approval gate; key/sign methods
+// stay refused until the user approves this site in the DIG wallet.
 (function () {
   if (window.chia) return; // never clobber an already-present provider
-  var ENDPOINT = "http://127.0.0.1:9777/api/wc/request";
   var listeners = {};
 
   function emit(ev, data) {
@@ -18,33 +20,53 @@
     });
   }
 
+  // Forward one request to the native bridge, resolving with the raw envelope
+  // string (or "" if the bridge is absent / the wallet is unreachable).
+  function nativeCall(reqJson) {
+    return new Promise(function (resolve) {
+      var b = window.__digWalletRpc;
+      if (!b || typeof b.request !== "function") { resolve(""); return; }
+      try {
+        b.request(reqJson, function (resp) { resolve(resp || ""); });
+      } catch (e) {
+        resolve("");
+      }
+    });
+  }
+
+  // One CHIP-0002 RPC. The bridge returns the wallet's JSON envelope
+  // {"status":<u16>,"body":<json>}; map it to the same resolve/reject + error
+  // shapes the dapp ecosystem expects (mirrors the WalletConnect→Sage path).
   async function rpc(method, params) {
-    var res;
-    try {
-      res = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ method: method, params: params || {} }),
-      });
-    } catch (e) {
+    var raw = await nativeCall(
+      JSON.stringify({ method: method, params: params || {} })
+    );
+    if (!raw) {
       var ne = new Error("DIG wallet is not reachable");
       ne.code = -1;
       throw ne;
     }
-    if (res.status === 202) {
+    var env;
+    try { env = JSON.parse(raw); } catch (_) { env = null; }
+    if (!env) {
+      var be = new Error("DIG wallet returned a malformed response");
+      be.code = -1;
+      throw be;
+    }
+    var status = env.status || 0;
+    var body = env.body || {};
+    if (status === 202) {
       var pe = new Error("Connection pending approval in the DIG wallet");
       pe.code = 4001;
       pe.pending = true;
       throw pe;
     }
-    var json = {};
-    try { json = await res.json(); } catch (_) { /* no body */ }
-    if (!res.ok) {
-      var fe = new Error(json.error || "DIG wallet error " + res.status);
-      fe.code = res.status;
+    if (status < 200 || status >= 300) {
+      var fe = new Error(body.error || "DIG wallet error " + status);
+      fe.code = status;
       throw fe;
     }
-    return json.data;
+    return body.data;
   }
 
   // connect() blocks until the user approves this origin (or rejects / times out).

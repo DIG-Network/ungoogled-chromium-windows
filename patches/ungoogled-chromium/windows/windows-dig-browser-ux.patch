@@ -70,16 +70,18 @@
  #include "chrome/browser/ui/ui_features.h"
  #include "chrome/browser/ui/view_ids.h"
  #include "chrome/browser/ui/views/chrome_layout_provider.h"
-@@ -34,6 +36,8 @@
+@@ -34,6 +36,10 @@
  #include "ui/base/metadata/metadata_impl_macros.h"
  #include "ui/base/models/menu_model.h"
  #include "ui/base/mojom/dialog_button.mojom.h"
 +#include "ui/base/window_open_disposition.h"
++#include "ui/events/event.h"
++#include "ui/events/event_constants.h"
 +#include "ui/gfx/geometry/rect.h"
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
  #include "ui/views/controls/styled_label.h"
-@@ -148,17 +152,47 @@
+@@ -148,17 +154,97 @@
                          kActionHome),
                      nullptr),
        prefs_(browser_window_interface->GetProfile()->GetPrefs()),
@@ -99,9 +101,10 @@
 +  // forward, reload). The leaf-over-wallet silhouette reads unmistakably as a
 +  // Chia wallet at the toolbar size.
 +  SetVectorIcons(kDigWalletIcon, kDigWalletIcon);
-+  // DIG Browser: the wallet button opens the built-in DIG Wallet in a compact
-+  // popup window -- it is the wallet button, not a navigate-home button.
-+  // Override the home-navigation PressedCallback the toolbar wired in.
++  // DIG Browser: the wallet button opens the built-in DIG Wallet as a docked
++  // side panel -- it is the wallet button, not a navigate-home button. Override
++  // the home-navigation PressedCallback the toolbar wired in. OpenDigWallet
++  // reads the click's modifiers (Alt = toggle side, Shift = pop out).
 +  SetCallback(
 +      base::BindRepeating(&HomeButton::OpenDigWallet, base::Unretained(this)));
 +  SetTooltipText(u"DIG Wallet");
@@ -110,20 +113,69 @@
    SizeToPreferredSize();
  }
  
-+void HomeButton::OpenDigWallet() {
++namespace {
++// Width of the docked DIG Wallet side panel, in DIP. Matches Chromium's default
++// side-panel feel (slim, fixed) and the wallet UI's intended layout.
++constexpr int kWalletPanelWidth = 420;
++// Size of the popped-out (free-floating) wallet window.
++constexpr int kWalletPopoutWidth = 420;
++constexpr int kWalletPopoutHeight = 720;
++}  // namespace
++
++void HomeButton::OpenDigWallet(const ui::Event& event) {
 +  if (!profile_) {
 +    return;
 +  }
-+  // Open chia://wallet (the in-process DIG Wallet UI) in a compact, minimal-
-+  // chrome popup window sized like a wallet panel. NEW_POPUP with the default
-+  // window_action auto-shows the window; the size comes from window_features.
++
++  // Alt+click toggles which edge the panel docks to (persisted per profile),
++  // then (re)opens the panel on the new side.
++  if (prefs_ && (event.flags() & ui::EF_ALT_DOWN)) {
++    prefs_->SetBoolean("dig.wallet_panel.dock_left",
++                       !prefs_->GetBoolean("dig.wallet_panel.dock_left"));
++  }
++
++  // Anchor the panel to the browser window this button lives in.
++  gfx::Rect window_bounds;
++  if (GetWidget()) {
++    window_bounds = GetWidget()->GetWindowBoundsInScreen();
++  }
++
++  // Shift+click pops the wallet OUT as its own free-floating window (not docked
++  // to an edge), centered over the browser window.
++  if ((event.flags() & ui::EF_SHIFT_DOWN) || window_bounds.IsEmpty()) {
++    gfx::Rect popout(kWalletPopoutWidth, kWalletPopoutHeight);
++    if (!window_bounds.IsEmpty()) {
++      popout.set_x(window_bounds.x() +
++                   (window_bounds.width() - kWalletPopoutWidth) / 2);
++      popout.set_y(window_bounds.y() +
++                   (window_bounds.height() - kWalletPopoutHeight) / 2);
++    }
++    ShowWalletWindow(popout);
++    return;
++  }
++
++  // Default: dock the panel to an edge of the browser window, full height.
++  const bool dock_left =
++      prefs_ && prefs_->GetBoolean("dig.wallet_panel.dock_left");
++  gfx::Rect docked(kWalletPanelWidth, window_bounds.height());
++  docked.set_y(window_bounds.y());
++  docked.set_x(dock_left ? window_bounds.x()
++                         : window_bounds.right() - kWalletPanelWidth);
++  ShowWalletWindow(docked);
++}
++
++void HomeButton::ShowWalletWindow(const gfx::Rect& bounds) {
++  // Open chia://wallet (the in-process DIG Wallet UI) in a minimal-chrome popup
++  // window placed at `bounds`. NEW_POPUP with the default window_action
++  // auto-shows the window; the position + size come from window_features.
 +  NavigateParams params(profile_.get(), GURL("chia://wallet"),
 +                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
 +  params.disposition = WindowOpenDisposition::NEW_POPUP;
++  params.window_features.has_x = true;
++  params.window_features.has_y = true;
 +  params.window_features.has_width = true;
 +  params.window_features.has_height = true;
-+  params.window_features.bounds.set_width(420);
-+  params.window_features.bounds.set_height(720);
++  params.window_features.bounds = bounds;
 +  Navigate(&params);
 +}
 +
@@ -140,13 +192,19 @@
  
  class HomePageUndoBubbleCoordinator {
   public:
-@@ -60,7 +61,12 @@
+@@ -60,7 +61,18 @@
        ui::mojom::DragOperation& output_drag_op,
        std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner);
  
-+  // DIG Browser: the DIG-coin button opens the built-in DIG Wallet
-+  // (chia://wallet) in a compact popup window instead of navigating home.
-+  void OpenDigWallet();
++  // DIG Browser: the wallet button opens the built-in DIG Wallet (chia://wallet)
++  // as a side panel docked to the browser window. Click = open/focus the docked
++  // panel (right by default); Alt+click = toggle the dock side (left/right) and
++  // reopen docked; Shift+click = pop the wallet out as its own free-floating
++  // window.
++  void OpenDigWallet(const ui::Event& event);
++
++  // Opens chia://wallet in a popup window at `bounds`.
++  void ShowWalletWindow(const gfx::Rect& bounds);
 +
    const raw_ptr<PrefService> prefs_;
 +  const raw_ptr<Profile> profile_;
@@ -228,7 +286,7 @@
 +CLOSE
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -116,9 +116,12 @@
+@@ -116,15 +116,23 @@
    registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  
@@ -243,7 +301,24 @@
                                  pref_registration_flags);
    registry->RegisterBooleanPref(prefs::kSplitViewDragAndDropEnabled, true,
                                  pref_registration_flags);
-@@ -142,8 +145,9 @@
+ 
+   registry->RegisterBooleanPref(prefs::kShowForwardButton, true,
+                                 pref_registration_flags);
++  // DIG Browser: which edge the DIG Wallet side panel docks to. Default false =
++  // dock RIGHT (Chromium's own side panel default side); true = dock LEFT.
++  // Toggled from the wallet button (Alt+click) and persisted per profile.
++  registry->RegisterBooleanPref("dig.wallet_panel.dock_left", false,
++                                pref_registration_flags);
+   registry->RegisterInt64Pref(prefs::kBookmarkBarHoverCount, 0);
+   registry->RegisterInt64Pref(prefs::kBookmarkBarNavigationCount, 0);
+   registry->RegisterBooleanPref(prefs::kPinContextualTaskButton, true,
+@@ -137,26 +145,27 @@
+   registry->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu, true);
+   registry->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar, true);
+   registry->RegisterBooleanPref(
+-      translate::prefs::kOfferTranslateEnabled, true,
++      translate::prefs::kOfferTranslateEnabled, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
    registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
    registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacementPopup);
    registry->RegisterDictionaryPref(prefs::kAppWindowPlacement);
@@ -254,7 +329,22 @@
        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
  #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
    registry->RegisterBooleanPref(prefs::kPrintPreviewUseSystemDefaultPrinter,
-@@ -215,8 +219,10 @@
+                                 false);
+ #endif
+   registry->RegisterStringPref(prefs::kWebRTCIPHandlingPolicy,
+-                               blink::kWebRTCIPHandlingDefault);
++                               blink::kWebRTCIPHandlingDisableNonProxiedUdp);
+   registry->RegisterListPref(prefs::kWebRTCIPHandlingUrl, base::ListValue());
+   registry->RegisterBooleanPref(prefs::kWebRTCPostQuantumKeyAgreement, false);
+   registry->RegisterStringPref(prefs::kWebRTCUDPPortRange, std::string());
+   registry->RegisterBooleanPref(prefs::kWebRtcEventLogCollectionAllowed, false);
+   registry->RegisterListPref(prefs::kWebRtcLocalIpsAllowedUrls);
+-  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, true);
++  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, false);
+   registry->RegisterListPref(
+       prefs::kWebRTCDiagnosticLogCollectionAllowedForOrigins,
+       base::ListValue());
+@@ -215,8 +224,10 @@
                                  false);
  #endif
  
@@ -340,25 +430,74 @@
  #include "chrome/browser/device_api/managed_configuration_service.h"
  #include "chrome/browser/devtools/features.h"
  #include "chrome/browser/download/chrome_download_manager_delegate.h"
-@@ -851,6 +852,7 @@
+@@ -307,7 +308,6 @@
+ #include "components/safe_browsing/core/browser/url_checker_delegate.h"
+ #include "components/safe_browsing/core/common/features.h"
+ #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
+-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+ #include "components/search_engines/search_engines_switches.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "components/security_state/core/security_state.h"
+@@ -342,6 +342,7 @@
+ #include "content/public/browser/internal_webui_config.h"
+ #include "content/public/browser/isolated_web_apps_policy.h"
+ #include "content/public/browser/legacy_tech_cookie_issue_details.h"
++#include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/network_service_instance.h"
+ #include "content/public/browser/overlay_window.h"
+@@ -850,11 +851,19 @@
+ 
    // Don't change the URL when incognito mode.
    if (profile->IsOffTheRecord()) {
-    if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
++   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
 +   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
      return false;
    }
  
-@@ -859,6 +861,9 @@
-   if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
-     ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
-   if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
+   std::string ntp_location =
+       profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
++    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
++  if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
 +  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
 +    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
 +  if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
    if (ntp_location.empty()) {
      return false;
    }
-@@ -2813,24 +2818,6 @@
+@@ -868,6 +877,21 @@
+   return true;
+ }
+ 
++// DIG Browser: chia://settings is a deprecated alias for the browser's own DIG
++// settings section. Rewrite it to chrome://settings/dig here, at the browser
++// navigation layer, so the navigation is browser-initiated (a renderer-initiated
++// redirect from a chia:// page to a chrome:// WebUI is blocked). This is what
++// makes the NTP "Settings" link and any chia://settings entry point resolve to
++// the consolidated DIG section.
++bool HandleDigSettingsRewrite(GURL* url,
++                              content::BrowserContext* browser_context) {
++  if (url->SchemeIs(url::kDigScheme) && url->host() == "settings") {
++    *url = GURL("chrome://settings/dig");
++    return true;
++  }
++  return false;
++}
++
+ #if !BUILDFLAG(IS_ANDROID)
+ bool IsFileOrDirectoryPickerWithoutGestureAllowed(
+     content::WebContents* contents) {
+@@ -1534,7 +1558,7 @@
+ void ChromeContentBrowserClient::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
+-  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, true);
++  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, false);
+   // Register user prefs for mapping SitePerProcess and IsolateOrigins in
+   // user policy in addition to the same named ones in Local State (which are
+   // used for mapping the command-line flags).
+@@ -2809,24 +2833,6 @@
      command_line->AppendSwitchASCII(switches::kMetricsClientID,
                                      client_info->client_id);
    }
@@ -383,7 +522,19 @@
  #endif
  
    if (logging::DialogsAreSuppressed()) {
-@@ -6186,6 +6173,13 @@
+@@ -5125,6 +5131,11 @@
+   handler->AddHandlerPair(&HandleNewTabPageLocationOverride,
+                           BrowserURLHandler::null_handler());
+ 
++  // DIG Browser: rewrite chia://settings -> chrome://settings/dig (browser-side,
++  // so the cross-scheme navigation to the WebUI is allowed).
++  handler->AddHandlerPair(&HandleDigSettingsRewrite,
++                          BrowserURLHandler::null_handler());
++
+   for (auto& part : extra_parts_) {
+     part->BrowserURLHandlerCreated(handler);
+   }
+@@ -6182,6 +6193,13 @@
    }
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
          // BUILDFLAG(IS_CHROMEOS)
@@ -397,7 +548,7 @@
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE) || BUILDFLAG(IS_CHROMEOS) ||
          // !BUILDFLAG(IS_ANDROID)
  
-@@ -6587,6 +6581,12 @@
+@@ -6583,6 +6601,12 @@
                                 /*enforce_same_origin=*/true));
        }
      }
@@ -412,7 +563,20 @@
          // BUILDFLAG(IS_CHROMEOS)
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
-@@ -67,6 +67,7 @@
+@@ -57,8 +57,12 @@
+ #include "services/service_manager/public/cpp/binder_registry.h"
+ #include "skia/ext/image_operations.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
++#include "chrome/renderer/dig/dig_wallet_bridge.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
++#include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
+ #include "third_party/blink/public/platform/web_url_request.h"
++#include "v8/include/v8-context.h"
++#include "v8/include/v8-isolate.h"
+ #include "third_party/blink/public/web/web_console_message.h"
+ #include "third_party/blink/public/web/web_document.h"
+ #include "third_party/blink/public/web/web_document_loader.h"
+@@ -67,6 +71,7 @@
  #include "third_party/blink/public/web/web_local_frame.h"
  #include "third_party/blink/public/web/web_local_frame_client.h"
  #include "third_party/blink/public/web/web_node.h"
@@ -420,7 +584,7 @@
  #include "third_party/blink/public/web/web_security_policy.h"
  #include "third_party/blink/public/web/web_view.h"
  #include "third_party/libwebp/src/src/webp/decode.h"
-@@ -76,6 +77,11 @@
+@@ -76,9 +81,13 @@
  #include "ui/gfx/codec/webp_codec.h"
  #include "ui/gfx/geometry/size_f.h"
  #include "url/gurl.h"
@@ -431,17 +595,64 @@
 +#include "chrome/renderer/dig_provider_js.inc"
  
  #if !BUILDFLAG(IS_ANDROID)
+-#include "chrome/renderer/accessibility/read_anything/read_anything_app_controller.h"
  #include "chrome/renderer/searchbox/searchbox_extension.h"
-@@ -346,6 +352,22 @@
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ 
+@@ -272,14 +281,16 @@
+   if (frame->Parent() || frame->IsInFencedFrameTree())
+     return;
+ 
+-  GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
+-  if (!osdd_url.is_empty()) {
+-    mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
+-        osdd_handler;
+-    render_frame()->GetBrowserInterfaceBroker().GetInterface(
+-        osdd_handler.BindNewPipeAndPassReceiver());
+-    osdd_handler->PageHasOpenSearchDescriptionDocument(
+-        frame->GetDocument().Url(), osdd_url);
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
++    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
++    if (!osdd_url.is_empty()) {
++      mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
++          osdd_handler;
++      render_frame()->GetBrowserInterfaceBroker().GetInterface(
++          osdd_handler.BindNewPipeAndPassReceiver());
++      osdd_handler->PageHasOpenSearchDescriptionDocument(
++          frame->GetDocument().Url(), osdd_url);
++    }
+   }
+ }
+ 
+@@ -341,18 +352,43 @@
+     SearchBoxExtension::Install(render_frame()->GetWebFrame());
+   }
+ 
+-  // Install ReadAnythingAppController on render frames with the Read Anything
+-  // url, which is chrome-untrusted. ReadAnythingAppController installs v8
+-  // bindings in the chrome.readingMode namespace which are consumed by
+-  // read_anything/app.ts, the resource of the Read Anything WebUI.
+-  if (render_frame()->GetWebFrame()->GetDocument().Url() ==
+-      chrome::kChromeUIUntrustedReadAnythingSidePanelURL) {
+-    ReadAnythingAppController::Install(render_frame());
+-  }
+ #endif  // !BUILDFLAG(IS_ANDROID)
  #if BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    guest_view::SlimWebViewBindings::MaybeInstall(*render_frame());
  #endif  // BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 +
-+  // DIG: inject the built-in Chia wallet provider (window.chia, CHIP-0002) into
-+  // every web page at document start, before page scripts run. The provider
-+  // proxies to the in-process wallet over loopback; the wallet enforces a
-+  // per-origin approval gate (reading the unspoofable Origin header), so merely
-+  // injecting the object exposes nothing until the user connects the site.
++  // DIG: expose the built-in Chia wallet to dapps via window.chia (CHIP-0002) on
++  // every web page. Two steps, in order:
++  //   1. Install the NATIVE bridge `window.__digWalletRpc` — a plain v8::Object
++  //      with one bound C++ function, backed by a frame-scoped C++ DigWalletBridge
++  //      (NOT a cppgc gin::Wrappable; the per-page cppgc model crashed the
++  //      renderer, incident 2026-06-27). The bridge talks to the browser over a
++  //      frame Mojo pipe — no network, so the page's CSP can't block it.
++  //   2. Inject the provider JS (dig_provider.js, embedded as kDigProviderJs),
++  //      which wraps __digWalletRpc in the window.chia Promise API.
++  // The wallet enforces a per-origin approval gate on the browser side (keyed on
++  // the frame's unspoofable committed origin), so injecting the object exposes
++  // nothing until the user connects the site.
 +  blink::WebLocalFrame* frame = render_frame()->GetWebFrame();
 +  if (!frame) {
 +    return;
@@ -449,8 +660,18 @@
 +  const GURL url = frame->GetDocument().Url();
 +  if (url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme) ||
 +      url.SchemeIs(url::kDigScheme)) {
-+    frame->ExecuteScript(blink::WebScriptSource(
-+        blink::WebString::FromUtf8(std::string_view(kDigProviderJs))));
++    v8::Isolate* isolate = frame->GetAgentGroupScheduler()->Isolate();
++    v8::HandleScope handle_scope(isolate);
++    v8::Local<v8::Context> context = frame->MainWorldScriptContext();
++    if (!context.IsEmpty()) {
++      if (!dig_wallet_bridge_) {
++        dig_wallet_bridge_ =
++            std::make_unique<dig::DigWalletBridge>(render_frame());
++      }
++      dig_wallet_bridge_->InstallOnContext(isolate, context);
++      frame->ExecuteScript(blink::WebScriptSource(
++          blink::WebString::FromUtf8(std::string_view(kDigProviderJs))));
++    }
 +  }
  }
  
@@ -621,7 +842,7 @@
 +}  // namespace dig
 --- /dev/null
 +++ b/chrome/browser/dig/BUILD.gn
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,27 @@
 +# Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
@@ -634,10 +855,14 @@
 +    "dig_tab_helper.h",
 +    "dig_url_loader_factory.cc",
 +    "dig_url_loader_factory.h",
++    "dig_wallet_rpc_handler.cc",
++    "dig_wallet_rpc_handler.h",
 +  ]
 +
 +  deps = [
++    "//chrome/common:mojo_bindings",
 +    "//content/public/browser",
++    "//mojo/public/cpp/bindings",
 +    "//mojo/public/cpp/system",
 +    "//net",
 +    "//services/network/public/cpp",
@@ -647,7 +872,7 @@
 +}
 --- /dev/null
 +++ b/chrome/browser/dig/dig_native_runtime.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,38 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -674,12 +899,21 @@
 +// block (a base::MayBlock task), never the UI/IO thread. Thread-safe.
 +std::string CallDigRpc(const std::string& request_json);
 +
++// Execute one wallet (CHIP-0002 window.chia) request in-process (dig_wallet_rpc)
++// on behalf of `origin` — the calling frame's UNSPOOFABLE committed origin,
++// supplied by the browser process so the wallet's per-origin approval gate is
++// trustworthy. Returns a JSON envelope `{"status":<u16>,"body":<json>}` (the
++// wallet's HTTP-equivalent status + body), or an empty string on failure.
++// BLOCKING — call ONLY from a base::MayBlock task, never the UI/IO thread.
++std::string CallWalletRpc(const std::string& origin,
++                          const std::string& request_json);
++
 +}  // namespace dig
 +
 +#endif  // CHROME_BROWSER_DIG_DIG_NATIVE_RUNTIME_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_native_runtime.cc
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,112 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -699,11 +933,13 @@
 +// C-ABI exported by dig_runtime.dll (see crates/dig-runtime).
 +using DigRuntimeStartFn = void (*)();
 +using DigRpcFn = char* (*)(const char*);
++using DigWalletRpcFn = char* (*)(const char*, const char*);
 +using DigFreeFn = void (*)(char*);
 +
 +struct DigRuntimeLib {
 +  DigRuntimeStartFn start = nullptr;
 +  DigRpcFn rpc = nullptr;
++  DigWalletRpcFn wallet_rpc = nullptr;
 +  DigFreeFn free_fn = nullptr;
 +  bool attempted = false;
 +};
@@ -743,6 +979,8 @@
 +      base::GetFunctionPointerFromNativeLibrary(native, "dig_runtime_start"));
 +  lib.rpc = reinterpret_cast<DigRpcFn>(
 +      base::GetFunctionPointerFromNativeLibrary(native, "dig_rpc"));
++  lib.wallet_rpc = reinterpret_cast<DigWalletRpcFn>(
++      base::GetFunctionPointerFromNativeLibrary(native, "dig_wallet_rpc"));
 +  lib.free_fn = reinterpret_cast<DigFreeFn>(
 +      base::GetFunctionPointerFromNativeLibrary(native, "dig_free"));
 +}
@@ -763,6 +1001,22 @@
 +    return std::string();
 +  }
 +  char* out = lib.rpc(request_json.c_str());
++  if (!out) {
++    return std::string();
++  }
++  std::string result(out);
++  lib.free_fn(out);
++  return result;
++}
++
++std::string CallWalletRpc(const std::string& origin,
++                          const std::string& request_json) {
++  EnsureLoaded();
++  DigRuntimeLib& lib = Lib();
++  if (!lib.wallet_rpc || !lib.free_fn) {
++    return std::string();
++  }
++  char* out = lib.wallet_rpc(origin.c_str(), request_json.c_str());
 +  if (!out) {
 +    return std::string();
 +  }
@@ -865,7 +1119,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,702 @@
+@@ -0,0 +1,705 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1139,14 +1393,17 @@
 +      SendResponse();
 +      return;
 +    }
-+    // chia://settings opens the DIG protocol settings page (local-cache
-+    // threshold, etc.), served in-process by the DIG runtime over loopback.
++    // chia://settings is DEPRECATED. The DIG protocol settings (local-cache
++    // limit, clear, etc.) now live in the browser's own settings UI at
++    // chrome://settings/dig (a native Mojo-backed section), so this legacy
++    // entry point just redirects there. Single source of truth for DIG
++    // settings; the old standalone loopback page is gone.
 +    if (url.host() == "settings") {
 +      output_ =
 +          "<!doctype html><meta charset=\"utf-8\">"
-+          "<meta http-equiv=\"refresh\" content=\"0;url=http://127.0.0.1:9777/settings\">"
++          "<meta http-equiv=\"refresh\" content=\"0;url=chrome://settings/dig\">"
 +          "<title>DIG Settings</title>"
-+          "<body style=\"margin:0;background:#0b0c0e\"></body>";
++          "<body style=\"margin:0;background:#fff\"></body>";
 +      mime_type_ = "text/html";
 +      verified_ = false;
 +      SendResponse();
