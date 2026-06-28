@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0c0718">
+<title>DIG identity &amp; privacy</title>
+<style>
+  /* Space Grotesk for the brand/display (falls back cleanly if the CDN is stripped at build). */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  :root{
+    --violet:#5800D6; --magenta:#FF00DE;
+    --grad:linear-gradient(100deg,#7835EB 0%,#FF00DE 100%);
+    --ink:#ECE6F7; --muted:#B9AFD6; --faint:#7C6FA6;
+    --bg:#0c0718; --card:#140c26; --line:#241a3d; --line-2:#322455;
+    --chia:#34d27e; --ok:#34d27e; --warn:#f0a93b;
+    --font-display:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+    --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --r:14px; --r-lg:20px; --pill:999px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font-body);color:var(--ink);
+       background:radial-gradient(900px 600px at 50% -20%,#1b0b35 0%,#0c0718 62%,#08040f 100%);
+       padding:18px 16px 22px}
+  /* header */
+  .hdr{display:flex;align-items:center;gap:11px;margin:2px 2px 16px}
+  .mark{width:34px;height:34px;border-radius:10px;flex:none;display:flex;align-items:center;
+        justify-content:center;font-family:var(--font-display);font-weight:800;font-size:19px;color:#fff;
+        background:var(--grad);box-shadow:0 6px 22px rgba(120,53,235,.4)}
+  .hdr .t{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1}
+  .hdr .s{font-size:12px;color:var(--faint);margin-top:3px}
+  /* status hero */
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+        padding:16px;margin-bottom:14px}
+  .hero .badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-display);
+        font-weight:600;font-size:12.5px;border-radius:var(--pill);padding:6px 12px}
+  .hero .badge.dig{background:rgba(52,210,126,.13);color:var(--ok);border:1px solid rgba(52,210,126,.3)}
+  .hero .badge.web{background:rgba(124,111,166,.13);color:var(--muted);border:1px solid var(--line-2)}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.muted{background:var(--faint)}
+  .hero h2{font-family:var(--font-display);font-weight:700;font-size:15.5px;margin:13px 0 4px}
+  .hero p{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0}
+  .host{margin-top:11px;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--faint);
+        word-break:break-all;background:rgba(0,0,0,.22);border-radius:9px;padding:8px 10px}
+  .meta{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+        border-radius:var(--pill);padding:5px 10px;background:rgba(120,53,235,.13);
+        border:1px solid var(--line-2);color:var(--muted)}
+  .chip .dot{width:7px;height:7px}
+  /* privacy list */
+  .sec{font-family:var(--font-display);font-weight:600;font-size:11.5px;letter-spacing:.04em;
+       text-transform:uppercase;color:var(--faint);margin:18px 4px 9px}
+  .list{display:grid;gap:8px}
+  .row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+       border-radius:var(--r);padding:11px 13px}
+  .row .ic{width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;
+           justify-content:center;font-size:15px;background:rgba(120,53,235,.16);border:1px solid var(--line-2)}
+  .row .nm{font-family:var(--font-display);font-weight:600;font-size:13px}
+  .row .ds{font-size:11.5px;color:var(--muted);line-height:1.4;margin:1px 0 0}
+  .row .grow{flex:1;min-width:0}
+  .state{font-family:var(--font-display);font-weight:600;font-size:11px;border-radius:var(--pill);
+         padding:4px 9px;flex:none;background:rgba(52,210,126,.13);color:var(--ok);
+         border:1px solid rgba(52,210,126,.3)}
+  /* footer actions */
+  .actions{display:grid;gap:8px;margin-top:16px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+       font-family:var(--font-display);font-weight:600;font-size:13px;border-radius:var(--pill);
+       padding:11px 16px;border:1px solid var(--line-2);background:var(--card);color:var(--ink);
+       text-decoration:none;transition:border-color .15s,filter .15s,transform .08s}
+  .btn:hover{border-color:var(--violet)}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 8px 24px rgba(120,53,235,.3)}
+  .btn-primary:hover{filter:brightness(1.07)}
+  .foot{text-align:center;font-size:11px;color:var(--faint);margin-top:14px;line-height:1.5}
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="mark">D</div>
+    <div>
+      <div class="t">DIG identity</div>
+      <div class="s">Protection &amp; verification for this page</div>
+    </div>
+  </div>
+
+  <!-- Page status hero -->
+  <div class="hero">
+    <span id="badge" class="badge web"><span class="dot muted"></span><span id="badgeText">Standard web page</span></span>
+    <h2 id="statusTitle">Not a DIG Network page</h2>
+    <p id="statusBody">This page loads over the regular web. Privacy protections below still apply.</p>
+    <div id="host" class="host" hidden></div>
+    <div id="meta" class="meta" hidden>
+      <span id="chipVerified" class="chip" hidden><span class="dot ok"></span>On-chain verified</span>
+      <span id="chipSource" class="chip"><span class="dot ok"></span><span id="sourceText">Served locally</span></span>
+    </div>
+  </div>
+
+  <!-- Privacy posture (the hardened defaults; manage in settings) -->
+  <div class="sec">Privacy &amp; protection</div>
+  <div class="list">
+    <div class="row"><div class="ic">&#128683;</div>
+      <div class="grow"><div class="nm">Trackers &amp; ads</div><div class="ds">Third-party cookies &amp; cross-site tracking blocked</div></div>
+      <span class="state">On</span></div>
+    <div class="row"><div class="ic">&#129589;</div>
+      <div class="grow"><div class="nm">Fingerprinting</div><div class="ds">WebRTC IP leak protection &amp; reduced surface</div></div>
+      <span class="state">On</span></div>
+    <div class="row"><div class="ic">&#128272;</div>
+      <div class="grow"><div class="nm">HTTPS-Only &amp; encrypted DNS</div><div class="ds">Connections upgraded; DNS over HTTPS (Secure)</div></div>
+      <span class="state">On</span></div>
+    <div class="row"><div class="ic">&#128065;&#65039;</div>
+      <div class="grow"><div class="nm">Do Not Track &amp; no telemetry</div><div class="ds">DNT sent; nothing phones home</div></div>
+      <span class="state">On</span></div>
+  </div>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="chia://settings">Manage DIG settings &amp; cache</a>
+    <a class="btn" href="chia://privacy">Privacy &amp; security settings</a>
+  </div>
+
+  <div class="foot">DIG Browser verifies dig:// content against its on-chain root and decrypts it on your device. Privacy protections are on by default.</div>
+
+  <script>
+    (function(){
+      var q = new URLSearchParams(location.search || '');
+      var scheme   = q.get('scheme')   || 'web';     // dig | internal | web
+      var verified = q.get('verified') === '1';
+      var source   = q.get('source')   || 'remote';  // local | remote
+      var host     = q.get('host')     || '';
+
+      var badge = document.getElementById('badge');
+      var badgeText = document.getElementById('badgeText');
+      var dot = badge.querySelector('.dot');
+      var title = document.getElementById('statusTitle');
+      var body  = document.getElementById('statusBody');
+      var hostEl = document.getElementById('host');
+      var meta = document.getElementById('meta');
+      var chipVerified = document.getElementById('chipVerified');
+      var sourceText = document.getElementById('sourceText');
+
+      function setBadge(cls, text, dotCls){
+        badge.className = 'badge ' + cls;
+        badgeText.textContent = text;
+        dot.className = 'dot ' + dotCls;
+      }
+
+      if (scheme === 'dig') {
+        setBadge('dig', 'DIG Network page', 'ok');
+        title.textContent = 'Verified DIG content';
+        body.textContent = verified
+          ? 'This page was fetched from the DIG Network and verified against its on-chain root, then decrypted on your device. No server can tamper with it.'
+          : 'This page is served over the DIG Network.';
+        meta.hidden = false;
+        chipVerified.hidden = !verified;
+        sourceText.textContent = (source === 'local')
+          ? 'Served from your device' : 'Served from the network';
+        if (host) { hostEl.hidden = false; hostEl.textContent = 'chia://' + host; }
+      } else if (scheme === 'internal') {
+        setBadge('dig', 'DIG Browser', 'ok');
+        title.textContent = 'A DIG Browser page';
+        body.textContent = 'This is a built-in DIG Browser surface, served locally from the browser itself.';
+        if (host) { hostEl.hidden = false; hostEl.textContent = 'chia://' + host; }
+      } else {
+        setBadge('web', 'Standard web page', 'muted');
+        title.textContent = 'Not a DIG Network page';
+        body.textContent = 'This page loads over the regular web. The privacy protections below still apply.';
+        if (host) { hostEl.hidden = false; hostEl.textContent = host; }
+      }
+    })();
+  </script>
+</body>
+</html>

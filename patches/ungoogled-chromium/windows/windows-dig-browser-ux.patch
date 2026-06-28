@@ -213,10 +213,11 @@
    base::WeakPtrFactory<HomeButton> weak_ptr_factory_{this};
 --- a/chrome/app/vector_icons/BUILD.gn
 +++ b/chrome/app/vector_icons/BUILD.gn
-@@ -74,6 +74,7 @@
+@@ -74,6 +74,8 @@
      "developer_tools.icon",
      "devices.icon",
      "devices_chrome_refresh.icon",
++    "dig_shield.icon",
 +    "dig_wallet.icon",
      "dock_to_left.icon",
      "dock_to_left_spark.icon",
@@ -466,7 +467,7 @@
    if (ntp_location.empty()) {
      return false;
    }
-@@ -868,6 +877,21 @@
+@@ -868,6 +877,29 @@
    return true;
  }
  
@@ -482,13 +483,21 @@
 +    *url = GURL("chrome://settings/dig");
 +    return true;
 +  }
++  // chia://privacy -> the browser's privacy & security settings. The DIG
++  // identity panel (chia://shields) links here to manage the privacy posture;
++  // a renderer-initiated chia:// -> chrome:// nav is blocked, so map it at the
++  // browser navigation layer like chia://settings.
++  if (url->SchemeIs(url::kDigScheme) && url->host() == "privacy") {
++    *url = GURL("chrome://settings/privacy");
++    return true;
++  }
 +  return false;
 +}
 +
  #if !BUILDFLAG(IS_ANDROID)
  bool IsFileOrDirectoryPickerWithoutGestureAllowed(
      content::WebContents* contents) {
-@@ -1534,7 +1558,7 @@
+@@ -1534,7 +1566,7 @@
  void ChromeContentBrowserClient::RegisterProfilePrefs(
      user_prefs::PrefRegistrySyncable* registry) {
    registry->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
@@ -497,7 +506,7 @@
    // Register user prefs for mapping SitePerProcess and IsolateOrigins in
    // user policy in addition to the same named ones in Local State (which are
    // used for mapping the command-line flags).
-@@ -2809,24 +2833,6 @@
+@@ -2809,24 +2841,6 @@
      command_line->AppendSwitchASCII(switches::kMetricsClientID,
                                      client_info->client_id);
    }
@@ -522,7 +531,7 @@
  #endif
  
    if (logging::DialogsAreSuppressed()) {
-@@ -5125,6 +5131,11 @@
+@@ -5125,6 +5139,11 @@
    handler->AddHandlerPair(&HandleNewTabPageLocationOverride,
                            BrowserURLHandler::null_handler());
  
@@ -534,7 +543,7 @@
    for (auto& part : extra_parts_) {
      part->BrowserURLHandlerCreated(handler);
    }
-@@ -6182,6 +6193,13 @@
+@@ -6182,6 +6201,13 @@
    }
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
          // BUILDFLAG(IS_CHROMEOS)
@@ -548,7 +557,7 @@
  #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE) || BUILDFLAG(IS_CHROMEOS) ||
          // !BUILDFLAG(IS_ANDROID)
  
-@@ -6583,6 +6601,12 @@
+@@ -6583,6 +6609,12 @@
                                 /*enforce_same_origin=*/true));
        }
      }
@@ -1120,16 +1129,17 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,734 @@
+@@ -0,0 +1,750 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/dig/dig_url_loader_factory.h"
 +
-+#include "chrome/browser/dig/dig_about_html.inc"    // kDigAboutHtml
-+#include "chrome/browser/dig/dig_home_html.inc"     // kDigHomeHtml (the DIG Home)
-+#include "chrome/browser/dig/dig_welcome_html.inc"  // kDigWelcomeHtml
++#include "chrome/browser/dig/dig_about_html.inc"     // kDigAboutHtml
++#include "chrome/browser/dig/dig_home_html.inc"      // kDigHomeHtml (the DIG Home)
++#include "chrome/browser/dig/dig_shields_html.inc"   // kDigShieldsHtml
++#include "chrome/browser/dig/dig_welcome_html.inc"   // kDigWelcomeHtml
 +#include "chrome/browser/dig/dig_native_runtime.h"
 +#include "components/version_info/version_info.h"
 +
@@ -1405,6 +1415,21 @@
 +    // binary and served directly.
 +    if (url.host() == "welcome") {
 +      output_ = kDigWelcomeHtml;
++      mime_type_ = "text/html";
++      verified_ = false;  // a local page, not chain-verified content
++      SendResponse();
++      return;
++    }
++    // chia://shields is the DIG identity panel — the Brave-Shields analogue
++    // opened from the DIG toolbar button. It unifies the active page's dig://
++    // "verified / served-locally" status with the browser's privacy posture
++    // (ad/tracker/fingerprint controls, DNT, HTTPS-Only, encrypted DNS). A
++    // trusted browser-internal page embedded in the binary and served directly;
++    // the page reads its own ?scheme/&verified/&source/&host query (filled by
++    // the toolbar button from the active tab) to reflect the page it opened
++    // over. No resolve/verify/decrypt — this is a local UI surface.
++    if (url.host() == "shields") {
++      output_ = kDigShieldsHtml;
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
 +      SendResponse();

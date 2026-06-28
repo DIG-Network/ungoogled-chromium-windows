@@ -32,3 +32,5 @@ ungoogled-chromium/windows/windows-dig-settings-section.patch
 ungoogled-chromium/windows/windows-dig-privacy-defaults.patch
 ungoogled-chromium/windows/windows-dig-wallet-bridge.patch
 ungoogled-chromium/windows/windows-dig-search-default.patch
+ungoogled-chromium/windows/windows-dig-shields.patch
+ungoogled-chromium/windows/windows-dig-offline.patch

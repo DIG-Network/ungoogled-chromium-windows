@@ -1,0 +1,72 @@
+# DIG Browser: a DIG-branded network-error / offline illustration.
+#
+# Replaces the stock Chromium network-error artwork (the generic broken-globe
+# and the offline dino) with a DIG mark — a violet->magenta DIG "coin" with a
+# knocked-out "D" — the way Brave swaps in its lion. The mark is a single inline
+# SVG data URI embedded directly in neterror.css (the renderer is untrusted and
+# can't reach chrome://theme, and an inline SVG needs no pak/binary asset, so it
+# survives every clean build). It is base64-encoded (not %23-escaped) so grit's
+# flattenhtml CSS-url inliner does not try to resolve the SVG's inner url(#g)
+# gradient ref as a file path. The same mark is used for every error icon
+# (generic, offline, disabled), and is counter-inverted in dark mode so its
+# brand colors stay true.
+--- a/components/neterror/resources/neterror.css
++++ b/components/neterror/resources/neterror.css
+@@ -30,12 +30,30 @@
+   display: inline-block;
+ }
+ 
+-.icon-generic {
+-  /* Can't access chrome://theme/IDR_ERROR_NETWORK_GENERIC from an untrusted
+-   * renderer process, so embed the resource manually. */
+-  content: image-set(
+-      url(../../resources/default_100_percent/neterror/error_network_generic.png) 1x,
+-      url(../../resources/default_200_percent/neterror/error_network_generic.png) 2x);
++/* DIG Browser: a branded DIG mark replaces the stock Chromium network-error
++ * artwork (the generic broken-globe and the offline dino), the way Brave swaps
++ * in its lion. A single inline SVG data URI — a violet->magenta DIG "coin" with
++ * a knocked-out "D" — is embedded directly (the renderer is untrusted and can't
++ * reach chrome://theme, and an inline SVG needs no pak/binary asset, so it
++ * survives every clean build). The same mark is used for every error icon
++ * (generic, offline, disabled) so all DIG error pages read as one brand. */
++.icon-generic,
++.icon-offline,
++.icon-disabled {
++  /* base64 (not %23-escaped) so grit's flattenhtml CSS-url inliner doesn't try
++   * to resolve the SVG's inner url(#g) gradient ref as a file path. */
++  content:
++      url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMTIiIGhlaWdodD0iMTEyIiB2aWV3Qm94PSIwIDAgMTEyIDExMiI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNzgzNUVCIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRkYwMERFIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9Ijk2IiBoZWlnaHQ9Ijk2IiByeD0iMjYiIGZpbGw9InVybCgjZykiLz48cGF0aCBkPSJNNDAgMzRoMTdjMTQgMCAyMyA5IDIzIDIycy05IDIyLTIzIDIySDQwVjM0em0xNCAxNHYyMGgzYzYgMCAxMC00IDEwLTEwcy00LTEwLTEwLTEwaC0zeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==");
++  width: 112px;
++  height: 112px;
++  position: relative;
++}
++
++/* In dark mode the offline page applies a whole-page invert(1) (it flips the
++ * stock dino sprite). Counter-invert the DIG mark so its violet->magenta brand
++ * colors stay true in both light and dark. */
++.offline.inverted .icon-offline {
++  filter: invert(1);
+ }
+ 
+ .icon-info {
+@@ -44,20 +62,6 @@
+       url(../../security_interstitials/core/browser/resources/images/2x/info.png) 2x);
+ }
+ 
+-.icon-offline {
+-  content: image-set(
+-      url(images/default_100_percent/offline/100-error-offline.png) 1x,
+-      url(images/default_200_percent/offline/200-error-offline.png) 2x);
+-  position: relative;
+-}
+-
+-.icon-disabled {
+-  content: image-set(
+-      url(images/default_100_percent/offline/100-disabled.png) 1x,
+-      url(images/default_200_percent/offline/200-disabled.png) 2x);
+-  width: 112px;
+-}
+-
+ .hidden {
+   display: none;
+ }

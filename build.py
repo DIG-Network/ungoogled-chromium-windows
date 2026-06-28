@@ -180,6 +180,12 @@ def _apply_dig_branding(source_tree):
         _ROOT_DIR / 'dig' / 'welcome' / 'dig_welcome.html',
         'kDigWelcomeHtml', 'DIGWELCOME',
         'chrome/browser/dig/dig_welcome_html.inc')
+    # chia://shields — the DIG identity panel (Brave-Shields analogue) opened
+    # from the DIG toolbar button. Served by the dig handler like about/welcome.
+    _gen_embedded_page(
+        _ROOT_DIR / 'dig' / 'shields' / 'dig_shields.html',
+        'kDigShieldsHtml', 'DIGSHIELDS',
+        'chrome/browser/dig/dig_shields_html.inc')
 
     # Generate the embeddable injected wallet provider (window.chia, CHIP-0002),
     # compiled into the renderer and injected into every page at document start
