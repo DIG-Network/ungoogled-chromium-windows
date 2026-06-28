@@ -743,13 +743,13 @@
 +      DIG Network
 +    </message>
 +    <message name="IDS_SETTINGS_DIG_INTRO" desc="Plain-language intro to the DIG Network settings section.">
-+      The DIG Network is a decentralized web where every page is proven on-chain. Pages you visit are cached on this device so they load fast and offline.
++      The DIG Network is a decentralized web where every page is proven on-chain (secured by the $DIG token). Pages you visit are cached on this device so they load fast and offline.
 +    </message>
 +    <message name="IDS_SETTINGS_DIG_CACHE_LIMIT_LABEL" desc="Label for the DIG local-cache storage limit setting.">
 +      Local cache limit
 +    </message>
 +    <message name="IDS_SETTINGS_DIG_CACHE_LIMIT_SUBLABEL" desc="Sublabel explaining the DIG local-cache storage limit.">
-+      Most space the DIG node may use to store sites from the DIG Network on this device. Visited sites load locally and show a "local" badge; least-recently-used sites are evicted first.
++      Most space DIG Browser may use to store sites from the DIG Network on this device. Visited sites load locally and show a "local" badge; least-recently-used sites are evicted first.
 +    </message>
 +    <message name="IDS_SETTINGS_DIG_CLEAR_CACHE_BUTTON" desc="Button that clears the DIG local cache.">
 +      Clear cache

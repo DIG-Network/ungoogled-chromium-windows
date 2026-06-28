@@ -81,7 +81,7 @@
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
  #include "ui/views/controls/styled_label.h"
-@@ -148,17 +154,97 @@
+@@ -148,17 +154,103 @@
                          kActionHome),
                      nullptr),
        prefs_(browser_window_interface->GetProfile()->GetPrefs()),
@@ -107,7 +107,13 @@
 +  // reads the click's modifiers (Alt = toggle side, Shift = pop out).
 +  SetCallback(
 +      base::BindRepeating(&HomeButton::OpenDigWallet, base::Unretained(this)));
-+  SetTooltipText(u"DIG Wallet");
++  // Surface the otherwise-undiscoverable click modifiers in the tooltip: the
++  // bare click docks the panel, Alt+click flips which edge it docks to, and
++  // Shift+click pops it out as its own window. (Mirrored as explicit controls
++  // in the chia://wallet panel header.)
++  SetTooltipText(
++      u"DIG Wallet\nClick to open · Alt+click: dock left/right · "
++      u"Shift+click: pop out");
 +  GetViewAccessibility().SetName(std::u16string(u"DIG Wallet"));
    SetID(VIEW_ID_HOME_BUTTON);
    SizeToPreferredSize();
