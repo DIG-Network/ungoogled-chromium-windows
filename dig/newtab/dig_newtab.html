@@ -108,9 +108,9 @@
       <span class="wm">DIG<span class="n">Network</span></span>
       <span class="alpha" title="Pre-release &mdash; expect rough edges">alpha</span>
     </a>
-    <nav class="actions">
-      <a class="btn wallet" id="wallet" href="#" title="DIG Wallet &mdash; your Chia wallet, built into DIG Browser"><span class="dot"></span>Wallet</a>
-      <a class="btn btn-primary" href="https://hub.dig.net/new" title="Publish on DIGHUb">&#43;&nbsp;Publish</a>
+    <nav class="actions" aria-label="DIG Browser actions">
+      <a class="btn wallet" id="wallet" href="#" data-testid="ntp-wallet" title="DIG Wallet &mdash; your Chia wallet, built into DIG Browser"><span class="dot"></span>Wallet</a>
+      <a class="btn btn-primary" href="https://hub.dig.net/new" data-testid="ntp-publish" title="Publish on DIGHUb">&#43;&nbsp;Publish</a>
     </nav>
   </header>
 
@@ -120,32 +120,32 @@
     <p class="tag">Your window into the DIG Network &mdash; the unstoppable web. Open a store by its address or id, or search the web.</p>
 
     <div class="switch" role="tablist" aria-label="Search or apps">
-      <button id="tabApps" role="tab" aria-selected="true" aria-controls="panelApps">Apps</button>
-      <button id="tabSearch" role="tab" aria-selected="false" aria-controls="panelSearch">Search</button>
+      <button id="tabApps" role="tab" aria-selected="true" aria-controls="panelApps" data-testid="ntp-tab-apps">Apps</button>
+      <button id="tabSearch" role="tab" aria-selected="false" aria-controls="panelSearch" data-testid="ntp-tab-search">Search</button>
     </div>
 
     <!-- Apps directory (primary) -->
     <section class="panel" id="panelApps" role="tabpanel" aria-labelledby="tabApps">
-      <div class="grid">
-        <a class="app" href="https://hub.dig.net">
+      <div class="grid" role="list" aria-label="DIG apps">
+        <a class="app" href="https://hub.dig.net" role="listitem" data-testid="ntp-app-card" data-app-host="hub.dig.net">
           <div class="row"><div class="well">&#9883;&#65039;</div>
             <div><div class="nm">DIGHUb</div><div class="host">hub.dig.net</div></div></div>
           <p class="ds">Publish &amp; manage your sites on the DIG Network &mdash; your wallet is your account.</p>
           <span class="chip">Open &#8599;</span>
         </a>
-        <a class="app" href="https://xchannuity.app">
+        <a class="app" href="https://xchannuity.app" role="listitem" data-testid="ntp-app-card" data-app-host="xchannuity.app">
           <div class="row"><div class="well">&#127974;</div>
             <div><div class="nm">XCH Annuity</div><div class="host">xchannuity.app</div></div></div>
           <p class="ds">Private, self-custodial annuities &mdash; a legacy secured by Chia.</p>
           <span class="chip">Open &#8599;</span>
         </a>
-        <a class="app" href="https://v2.tibetswap.io">
+        <a class="app" href="https://v2.tibetswap.io" role="listitem" data-testid="ntp-app-card" data-app-host="v2.tibetswap.io">
           <div class="row"><div class="well">&#128176;</div>
             <div><div class="nm">TibetSwap</div><div class="host">v2.tibetswap.io</div></div></div>
           <p class="ds">Swap XCH &harr; tokens. Get <b>$DIG</b> here to publish on the DIG Network.</p>
           <span class="chip">Get $DIG &#8599;</span>
         </a>
-        <a class="app" href="https://docs.dig.net">
+        <a class="app" href="https://docs.dig.net" role="listitem" data-testid="ntp-app-card" data-app-host="docs.dig.net">
           <div class="row"><div class="well">&#128214;</div>
             <div><div class="nm">Docs</div><div class="host">docs.dig.net</div></div></div>
           <p class="ds">Learn the chia:// protocol, the CLI, and how to build on the DIG Network.</p>
@@ -160,9 +160,9 @@
       <form id="omni" autocomplete="off">
         <div class="bar">
           <span class="ic" id="lead" aria-hidden="true">&#128269;</span>
-          <input id="q" type="text" spellcheck="false"
+          <input id="q" type="text" spellcheck="false" data-testid="ntp-omnibox"
                  placeholder="Search the web, or open a chia:// store" aria-label="Search or DIG address">
-          <button class="go" type="submit" id="goBtn">Search</button>
+          <button class="go" type="submit" id="goBtn" data-testid="ntp-omnibox-go">Search</button>
         </div>
       </form>
       <div class="mode" id="mode">On the DIG Network? Paste a <b>store id</b> or <b>chia://&hellip;</b>. Anything else searches the web.</div>

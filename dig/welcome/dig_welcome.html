@@ -66,32 +66,32 @@
 </style>
 </head>
 <body>
-  <a class="skip" id="skip">Skip</a>
-  <div class="stage">
+  <a class="skip" id="skip" role="button" tabindex="0" data-testid="welcome-skip" aria-label="Skip the welcome tour">Skip</a>
+  <main class="stage" data-testid="welcome-page" role="region" aria-label="DIG Browser welcome tour" aria-roledescription="carousel">
 
     <!-- 1: welcome -->
-    <section class="slide on" data-i="0">
+    <section class="slide on" data-i="0" data-testid="welcome-slide" role="group" aria-roledescription="slide" aria-label="Welcome">
       <img class="logo" src="dig_logo_256.png" alt="DIG Browser">
       <h1>Welcome to <span class="n">DIG&nbsp;Browser</span></h1>
       <p class="lead">A browser built on the DIG Network &mdash; the unstoppable web. Faster to set up than to explain: let&rsquo;s take 30 seconds.</p>
     </section>
 
     <!-- 2: chia:// -->
-    <section class="slide" data-i="1">
+    <section class="slide" data-i="1" data-testid="welcome-slide" role="group" aria-roledescription="slide" aria-label="Open the in-network web">
       <div class="big">&#9670;</div>
       <h1>Open the <span class="n">in&#8209;network</span> web</h1>
       <p class="lead">Type a <b>chia://</b> address or a store id and DIG Browser opens it straight from the DIG Network &mdash; verified on its on-chain root, decrypted on your device. No server can tamper with it.</p>
     </section>
 
     <!-- 3: wallet -->
-    <section class="slide" data-i="2">
+    <section class="slide" data-i="2" data-testid="welcome-slide" role="group" aria-roledescription="slide" aria-label="Your DIG Wallet">
       <div class="big">&#9883;&#65039;</div>
       <h1>Your <span class="n">DIG Wallet</span>, built in</h1>
       <p class="lead">The DIG Wallet &mdash; your Chia wallet, built into DIG Browser &mdash; lives right in the toolbar and is your account across the DIG Network. Apps connect only with your approval, one site at a time.</p>
     </section>
 
     <!-- 4: privacy -->
-    <section class="slide" data-i="3">
+    <section class="slide" data-i="3" data-testid="welcome-slide" role="group" aria-roledescription="slide" aria-label="Private from the first click">
       <div class="big">&#128274;</div>
       <h1><span class="n">Private</span> from the first click</h1>
       <div class="feat">
@@ -102,24 +102,24 @@
     </section>
 
     <!-- 5: set default + finish -->
-    <section class="slide" data-i="4">
+    <section class="slide" data-i="4" data-testid="welcome-slide" role="group" aria-roledescription="slide" aria-label="You're all set">
       <img class="logo" src="dig_logo_256.png" alt="DIG Browser">
       <h1>You&rsquo;re <span class="n">all set</span></h1>
       <p class="lead">Make DIG Browser your default so every link opens here.</p>
       <p class="default-note">Open <b>Settings &rsaquo; Default browser</b> and choose DIG Browser. We&rsquo;ll take you there, or you can jump straight in.</p>
       <div class="controls">
-        <a class="btn" id="setDefault">Set as default</a>
-        <a class="btn btn-primary" id="finish">Start browsing &#8594;</a>
+        <a class="btn" id="setDefault" role="button" tabindex="0" data-testid="welcome-set-default">Set as default</a>
+        <a class="btn btn-primary" id="finish" role="button" tabindex="0" data-testid="welcome-finish">Start browsing &#8594;</a>
       </div>
     </section>
 
-    <div class="dots" id="dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+    <div class="dots" id="dots" role="tablist" aria-label="Tour progress"><i class="on"></i><i></i><i></i><i></i><i></i></div>
 
     <div class="controls" id="nav">
-      <a class="btn" id="back" style="visibility:hidden">&#8592; Back</a>
-      <a class="btn btn-primary" id="next">Next &#8594;</a>
+      <a class="btn" id="back" role="button" tabindex="0" data-testid="welcome-back" style="visibility:hidden">&#8592; Back</a>
+      <a class="btn btn-primary" id="next" role="button" tabindex="0" data-testid="welcome-next">Next &#8594;</a>
     </div>
-  </div>
+  </main>
 
   <script>
     (function(){

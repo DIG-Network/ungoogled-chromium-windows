@@ -90,6 +90,7 @@
 </style>
 </head>
 <body>
+ <main data-testid="shields-page" role="region" aria-label="DIG identity and privacy">
   <div class="hdr">
     <div class="mark">D</div>
     <div>
@@ -100,8 +101,8 @@
 
   <!-- Page status hero -->
   <div class="hero">
-    <span id="badge" class="badge web"><span class="dot muted"></span><span id="badgeText">Standard web page</span></span>
-    <h2 id="statusTitle">Not a DIG Network page</h2>
+    <span id="badge" class="badge web" data-testid="shields-badge"><span class="dot muted"></span><span id="badgeText">Standard web page</span></span>
+    <h2 id="statusTitle" data-testid="shields-status-title">Not a DIG Network page</h2>
     <p id="statusBody">This page loads over the regular web. Privacy protections below still apply.</p>
     <div id="host" class="host" hidden></div>
     <div id="meta" class="meta" hidden>
@@ -112,7 +113,7 @@
          ("Verified version"), with the protocol-level capsule id (storeId:rootHash)
          revealed on demand. Only shown when this page pins a specific rootHash. -->
     <div id="capsule" class="capsule" hidden>
-      <button id="capToggle" class="cap-toggle" type="button" aria-expanded="false" aria-controls="capDetail">
+      <button id="capToggle" class="cap-toggle" type="button" data-testid="shields-capsule-toggle" aria-expanded="false" aria-controls="capDetail">
         <span class="dot ok"></span>Verified version<span class="cap-caret" aria-hidden="true">&#9656;</span>
       </button>
       <div id="capDetail" class="cap-detail" hidden>
@@ -147,6 +148,7 @@
   </div>
 
   <div class="foot">DIG Browser verifies chia:// content against its on-chain root and decrypts it on your device. This panel is a read-only posture readout &mdash; manage the defaults in settings.</div>
+ </main>
 
   <script>
     (function(){
@@ -155,6 +157,16 @@
       var verified = q.get('verified') === '1';
       var source   = q.get('source')   || 'remote';  // local | remote
       var host     = q.get('host')     || '';
+
+      // Expose the page's verification verdict as document-level data-* so an
+      // agent can read it deterministically without scraping the visible text.
+      // capsule is filled below once the host is parsed.
+      var docEl = document.documentElement;
+      docEl.setAttribute('data-dig-scheme', scheme);
+      docEl.setAttribute('data-dig-verified', verified ? 'true' : 'false');
+      docEl.setAttribute('data-dig-source', source);
+      docEl.setAttribute('data-dig-host', host);
+      docEl.setAttribute('data-dig-capsule', '');
 
       var badge = document.getElementById('badge');
       var badgeText = document.getElementById('badgeText');
@@ -211,7 +223,10 @@
           ? 'Served from your device' : 'Served from the network';
         if (host) { hostEl.hidden = false; hostEl.textContent = 'chia://' + host; }
         var cap = capsuleFromHost(host);
-        if (cap) { capsule.hidden = false; capId.textContent = cap; }
+        if (cap) {
+          capsule.hidden = false; capId.textContent = cap;
+          docEl.setAttribute('data-dig-capsule', cap);
+        }
       } else if (scheme === 'internal') {
         setBadge('dig', 'DIG Browser', 'ok');
         title.textContent = 'A DIG Browser page';
