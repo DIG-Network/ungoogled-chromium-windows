@@ -170,8 +170,8 @@ test("page: progressive disclosure — plain language by default, capsule/storeI
   assert.match(html, /Raw control\.status/);
 });
 
-test("page: hosted-only features are labeled 'On DIGHub' outbound cards, not faked", () => {
-  assert.match(html, /On DIGHub/);
+test("page: hosted-only features are labeled 'On DIGHUb' outbound cards, not faked", () => {
+  assert.match(html, /On DIGHUb/);
   assert.match(html, /data-testid="node-hub-handles"/);
   assert.match(html, /data-testid="node-hub-discover"/);
 });
@@ -224,10 +224,12 @@ const depSrc =
   extractFn("classifyWalletError") + "\n" +
   extractFn("parseSpendResult") + "\n" +
   extractFn("normalizeHex") + "\n" +
+  extractFn("chiaContentUrl") + "\n" +
   extractFn("buildDeployResult") + "\n" +
   "export {nextState, buildStageRequest, stageErrToDeployErr, parseStageResult, " +
   "digAmountForCapsule, formatDig, formatUsd, buildCostPreview, buildMintRequest, " +
-  "buildAdvanceRequest, classifyWalletError, parseSpendResult, normalizeHex, buildDeployResult};";
+  "buildAdvanceRequest, classifyWalletError, parseSpendResult, normalizeHex, " +
+  "chiaContentUrl, buildDeployResult};";
 const depPage = await import("data:text/javascript," + encodeURIComponent(depSrc));
 
 const STAGE_OK = {
@@ -291,6 +293,13 @@ test("page deploy: spend parse + error classification match the module (broadcas
   }
 });
 
+test("page deploy: chiaContentUrl matches the module (canonical chia:// open address)", () => {
+  assert.equal(depPage.chiaContentUrl("aa".repeat(32), "bb".repeat(32)),
+               dep.chiaContentUrl("aa".repeat(32), "bb".repeat(32)));
+  assert.equal(depPage.chiaContentUrl("0x" + "AA".repeat(32), ""),
+               dep.chiaContentUrl("0x" + "AA".repeat(32), ""));
+});
+
 test("page deploy: buildDeployResult matches the module (capsule/URN/chia://)", () => {
   const stage = dep.parseStageResult(STAGE_OK);
   const spend = dep.parseSpendResult({ status: "broadcast", success: true,
@@ -298,6 +307,16 @@ test("page deploy: buildDeployResult matches the module (capsule/URN/chia://)", 
     storeId: "0x" + "11".repeat(32), newRoot: "0x" + "22".repeat(32) });
   assert.deepEqual(depPage.buildDeployResult({ mode: "new", stage, spend }),
                    dep.buildDeployResult({ mode: "new", stage, spend }));
+});
+
+test("page: Publish→Review shows the canonical chia:// open address, not dig://", () => {
+  // The Review step (renderReview) derives the displayed open address from
+  // chiaContentUrl(...) — the SAME chia:// scheme the Done step shows — so the
+  // flow never shows dig:// in Review then chia:// in Done. (Regression guard.)
+  assert.match(html, /chiaContentUrl\(staged\.storeId, staged\.root\)/,
+               "Review derives the chia:// open address");
+  assert.doesNotMatch(html, /staged\.contentAddress/,
+                      "the dig:// staging fallback is not displayed in Review");
 });
 
 test("page: the Publish panel + its flow steps carry stable testids", () => {

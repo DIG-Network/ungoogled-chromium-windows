@@ -173,7 +173,7 @@ puts a folder on the DIG Network **from this device**, signed by the in-process
   (`dig.stage`) → a **cost preview** (the dynamic, USD-pegged **$DIG** amount ÷
   live price + the XCH network fee) → sign in the wallet (`chia_mintStore`) →
   anchor on-chain → §21 push → result: the **capsule** (`storeId:rootHash`), the
-  `chia://` address to open it, and a DIGHub link.
+  `chia://` address to open it, and a DIGHUb link.
 - **Publish an update** — pick a store you own + a folder → `dig.stage` → cost →
   `chia_advanceStore` (or a writer **deploy token**) → anchor → §21 push.
 - Plain language by default; the capsule id, module path, and URN sit behind
@@ -183,8 +183,8 @@ puts a folder on the DIG Network **from this device**, signed by the in-process
   (`chia://node?publish=new`).
 
 **Hand-offs:** Publish → on-chain mint/advance via the in-process wallet + §21
-push to a remote (default `rpc.dig.net` / DIGHub, or a self-hosted remote).
-Hosted-only features (handles, discovery) are labeled "On DIGHub ↗" cards.
+push to a remote (default `rpc.dig.net` / DIGHUb, or a self-hosted remote).
+Hosted-only features (handles, discovery) are labeled "On DIGHUb ↗" cards.
 
 ---
 
@@ -204,11 +204,11 @@ Hosted-only features (handles, discovery) are labeled "On DIGHub ↗" cards.
 ## Ecosystem hand-offs
 
 - **DIGHUb** (`hub.dig.net`) — publish/manage stores; the DIG Wallet is the
-  account. Reached from the home Apps card and the My Node "On DIGHub ↗" cards.
+  account. Reached from the home Apps card and the My Node "On DIGHUb ↗" cards.
   The home "+ Publish" button now opens the **local** publish flow
-  (`chia://node` → Publish) — launch/deploy on this device — with DIGHub offered
+  (`chia://node` → Publish) — launch/deploy on this device — with DIGHUb offered
   as an alternate path. (Hosted-only features — handles, discovery, the price
-  peg `/v1/pricing` — still come from DIGHub.)
+  peg `/v1/pricing` — still come from DIGHUb.)
 - **docs.dig.net** — protocol / CLI / build docs. Reached from Apps + footer.
 - **dig.net** — marketing site. Reached from the explicit "DIG Network ↗"
   footer link (the brand logo goes to `chia://home`, not the marketing site).

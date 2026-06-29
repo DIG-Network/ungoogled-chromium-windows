@@ -52,6 +52,7 @@ test('about: has a main landmark and a data-testid on the page + version + links
   assert.match(about, /data-testid="about-link-network"/);
   assert.match(about, /data-testid="about-link-hub"/);
   assert.match(about, /data-testid="about-link-docs"/);
+  assert.match(about, /data-testid="about-link-discord"/);
   assert.match(about, /data-testid="about-link-welcome"/);
 });
 

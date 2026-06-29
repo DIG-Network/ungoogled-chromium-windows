@@ -47,6 +47,7 @@ import {
   classifyWalletError,
   buildDeployResult,
   normalizeHex,
+  chiaContentUrl,
 } from "./dig_deploy_flow.mjs";
 
 // ---- engine contract constants (must match digstore) -----------------------
@@ -381,4 +382,39 @@ test("normalizeHex: strips 0x and lowercases (canonical capsule form)", () => {
   assert.equal(normalizeHex("0xABCD"), "abcd");
   assert.equal(normalizeHex("ABCD"), "abcd");
   assert.equal(normalizeHex(null), "");
+});
+
+// ---- the canonical content-open address ------------------------------------
+
+test("chiaContentUrl: derives the canonical chia://<root>.<store>/ open address", () => {
+  // The user-facing content-open scheme is chia:// (SYSTEM.md → Canonical
+  // terminology) — the SAME form the Done step shows — never dig://.
+  assert.equal(
+    chiaContentUrl("aa".repeat(32), "bb".repeat(32)),
+    "chia://" + "bb".repeat(32) + "." + "aa".repeat(32) + "/"
+  );
+  // normalizes 0x + casing like the rest of the flow.
+  assert.equal(
+    chiaContentUrl("0x" + "AA".repeat(32), "0x" + "BB".repeat(32)),
+    "chia://" + "bb".repeat(32) + "." + "aa".repeat(32) + "/"
+  );
+});
+
+test("chiaContentUrl: a rootless store id → chia://<store>/", () => {
+  assert.equal(chiaContentUrl("aa".repeat(32), ""), "chia://" + "aa".repeat(32) + "/");
+});
+
+test("the Review-step content address agrees with the Done-step chia:// address", () => {
+  // Regression guard: the Publish→Review step must show the SAME chia:// open
+  // address the Done step shows — not the dig:// staging fallback.
+  const stage = parseStageResult(STAGE_OK); // store aa…, root bb…
+  const review = chiaContentUrl(stage.storeId, stage.root);
+  const spend = parseSpendResult({
+    status: "broadcast", success: true,
+    spendBundle: { coinSpends: 2, aggregatedSignature: "ab" },
+    storeId: "0x" + "aa".repeat(32), newRoot: "0x" + "bb".repeat(32),
+  });
+  const done = buildDeployResult({ mode: DEPLOY_MODE.UPDATE, stage, spend });
+  assert.equal(review, done.chiaUrl);
+  assert.match(review, /^chia:\/\//);
 });

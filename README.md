@@ -124,7 +124,7 @@ folder of files on the DIG Network **from this device**, signed by the in-proces
   **capsule** (`dig.stage`) → a **cost preview** (the dynamic, USD-pegged **$DIG**
   amount ÷ live price + the XCH network fee) → sign in the wallet
   (`chia_mintStore`) → anchor on-chain → §21 push so others can read it →
-  result: the **capsule** (`storeId:rootHash`), the `chia://` URN, and a DIGHub
+  result: the **capsule** (`storeId:rootHash`), the `chia://` URN, and a DIGHUb
   link.
 - **Publish an update** — pick a store you own + a folder → `dig.stage` → cost →
   `chia_advanceStore` (or a writer **deploy token**) → anchor → §21 push.

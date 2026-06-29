@@ -34,7 +34,7 @@
 //   3. ANCHOR (watch) + §21 PUSH so others can read the new capsule. The wallet
 //      pushes the spend bundle; anchoring is observed by re-reading the on-chain
 //      root (dig.getAnchoredRoot, already in the loader), and §21 push hands the
-//      compiled `.module` to a remote (default rpc.dig.net / DIGHub, or a
+//      compiled `.module` to a remote (default rpc.dig.net / DIGHUb, or a
 //      self-hosted remote) — driven by the node's control surface.
 //
 // This module is the SINGLE SOURCE OF TRUTH for the PURE deploy-flow policy: the
@@ -497,12 +497,37 @@ export function classifyWalletError(err) {
   return DEPLOY_ERR.UNKNOWN;
 }
 
+// ---- the canonical content-open address ------------------------------------
+
+/**
+ * Build the canonical chia:// content-open address for a staged/published
+ * capsule: `chia://<root>.<store>/` (or `chia://<store>/` when the root is
+ * absent — the rootless "latest" form). This is the user-facing scheme the DIG
+ * Browser/extension register to OPEN verified DIG content (SYSTEM.md → Canonical
+ * terminology & branding) — NOT the `urn:dig:` namespace and NOT the §21
+ * `dig://<host>` remote transport, both of which stay unchanged.
+ *
+ * The SINGLE source for this derivation, so the Publish→Review step and the
+ * Done step show the IDENTICAL address (they previously disagreed: Review showed
+ * the dig:// staging fallback while Done showed chia://). `buildDeployResult`
+ * uses it too.
+ *
+ * @param {string} storeId the store id (0x/casing tolerated).
+ * @param {string} [root] the root hash (0x/casing tolerated; empty → rootless).
+ * @returns {string} `chia://<root>.<store>/` | `chia://<store>/`.
+ */
+export function chiaContentUrl(storeId, root) {
+  const s = normalizeHex(storeId);
+  const r = normalizeHex(root);
+  return r ? `chia://${r}.${s}/` : `chia://${s}/`;
+}
+
 // ---- result assembly -------------------------------------------------------
 
 /**
  * Assemble the final published result from the staged capsule + the spend
  * result: the canonical capsule (storeId:rootHash), the chia:// URN to open it
- * in the browser, and an optional DIGHub URL where a hosted view lives. For a
+ * in the browser, and an optional DIGHUb URL where a hosted view lives. For a
  * NEW store the on-chain store id comes from the mint (the staged id was an
  * ephemeral preview); for an UPDATE the store id is unchanged and the root is
  * the staged root.
@@ -511,7 +536,7 @@ export function classifyWalletError(err) {
  * @param {string} args.mode DEPLOY_MODE.NEW | DEPLOY_MODE.UPDATE.
  * @param {object} args.stage a successful {@link parseStageResult}.
  * @param {object} args.spend a successful {@link parseSpendResult}.
- * @param {string} [args.hubBase="https://hub.dig.net"] the DIGHub base.
+ * @param {string} [args.hubBase="https://hub.dig.net"] the DIGHUb base.
  * @returns {{capsule:string, storeId:string, root:string, urn:string,
  *            chiaUrl:string, hubUrl:string, broadcasted:boolean}}
  */
@@ -534,7 +559,7 @@ export function buildDeployResult(args = {}) {
     storeId,
     root,
     urn: `urn:dig:chia:${storeId}:${root}`,
-    chiaUrl: `chia://${root}.${storeId}/`,
+    chiaUrl: chiaContentUrl(storeId, root),
     hubUrl: `${hubBase}/store/${storeId}`,
     broadcasted: !!spend.broadcasted,
   };

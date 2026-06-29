@@ -118,7 +118,7 @@
   .steps li.done .si{border-color:rgba(52,210,126,.4);color:var(--ok);
        background:rgba(52,210,126,.13)}
   .steps li.done{color:var(--ink)}
-  /* "On DIGHub" outbound cards — hosted features the local node does NOT do */
+  /* "On DIGHUb" outbound cards — hosted features the local node does NOT do */
   .hub-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:4px}
   .hub-card{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.18);border:1px solid var(--line);
        border-radius:var(--r);padding:12px 13px;text-decoration:none;color:var(--ink)}
@@ -375,8 +375,8 @@
     </section>
 
     <!-- Hosted-only features (NOT done locally — labeled outbound cards) -->
-    <section class="card" aria-label="On DIGHub">
-      <h2>On DIGHub</h2>
+    <section class="card" aria-label="On DIGHUb">
+      <h2>On DIGHUb</h2>
       <p class="cd">Some features are network services DIGHUb runs &mdash; your local
          node doesn't fake them. Manage them on the hub.</p>
       <div class="hub-strip">
@@ -667,6 +667,15 @@
 
     function normalizeHex(h){ return String(h==null?'':h).replace(/^0x/i,'').toLowerCase(); }
 
+    // Canonical chia:// content-open address — chia://<root>.<store>/ (rootless
+    // → chia://<store>/). The user-facing scheme the browser registers; the
+    // Review step + the Done step BOTH derive their open address from here so
+    // they can't disagree (the §21 dig://<host> remote + urn:dig: stay as-is).
+    function chiaContentUrl(storeId, root){
+      var s = normalizeHex(storeId), r = normalizeHex(root);
+      return r ? 'chia://'+r+'.'+s+'/' : 'chia://'+s+'/';
+    }
+
     function buildDeployResult(args){
       args = args || {};
       var mode = args.mode, stage = args.stage || {}, spend = args.spend || {};
@@ -675,7 +684,7 @@
       var root = normalizeHex(spend.root || stage.root);
       var hubBase = (args.hubBase || 'https://hub.dig.net').replace(/\/+$/, '');
       return {capsule:storeId+':'+root, storeId:storeId, root:root,
-              urn:'urn:dig:chia:'+storeId+':'+root, chiaUrl:'chia://'+root+'.'+storeId+'/',
+              urn:'urn:dig:chia:'+storeId+':'+root, chiaUrl:chiaContentUrl(storeId, root),
               hubUrl:hubBase+'/store/'+storeId, broadcasted:!!spend.broadcasted};
     }
 
@@ -1087,11 +1096,13 @@
         : ('You’ll pay the protocol default of '+cost.digText+' (live pricing was unavailable), '
            + 'plus the XCH network fee.');
       $('pubCost').textContent = costMsg;
+      // Show the canonical chia:// content-open address (the SAME form the Done
+      // step shows), not the dig:// staging fallback — one flow, one scheme.
       $('pubCapsule').textContent =
         'capsule       ' + staged.capsule + '\n' +
         'store_id      ' + staged.storeId + (staged.ephemeral ? '  (preview — the real id is assigned at mint)' : '') + '\n' +
         'root          ' + staged.root + '\n' +
-        'content URN   ' + staged.contentAddress + '\n' +
+        'opens at      ' + chiaContentUrl(staged.storeId, staged.root) + '\n' +
         'module        ' + staged.modulePath;
       showPubStep('review');
     }
