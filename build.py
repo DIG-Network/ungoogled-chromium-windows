@@ -479,13 +479,43 @@ def main():
              'and the gn/ninja build) — used to stage the source tree for the '
              'C:\\d move + manual build, and to re-anchor patches on a version bump.'
     )
+    parser.add_argument(
+        '--stage-only',
+        dest='stage_only',
+        action='store_true',
+        help='Stop after patches + DIG branding + domain substitution, but BEFORE the '
+             'rust-toolchain copy / gn gen / ninja build. Leaves build/src as a fully '
+             'staged, ready-to-compile tree. Used by scripts/build-local.ps1 to stage '
+             'here (a deep path) then MOVE the tree to a short path (MAX_PATH-safe) and '
+             'run gn+ninja there — the supported local build flow on Windows.'
+    )
+    parser.add_argument(
+        '--build-only',
+        dest='build_only',
+        action='store_true',
+        help='Skip ALL staging (unpack/prune/patch/branding/domain-sub) and run only the '
+             'rust-toolchain copy (if missing) + gn gen (if missing) + ninja + rename to '
+             'dig.exe + dig_runtime.dll staging. No build timeout, no installer packaging. '
+             'Pair with --source-tree to compile an already-staged tree that was moved to a '
+             'short path. This is the second half of the local build flow (after --stage-only).'
+    )
+    parser.add_argument(
+        '--source-tree',
+        dest='source_tree',
+        default=None,
+        help='Override the source tree location (default: build/src next to this script). '
+             'Used with --build-only to compile a staged tree that was moved to a short, '
+             'MAX_PATH-safe path (e.g. C:\\d).'
+    )
     args = parser.parse_args()
 
     # Set common variables
-    source_tree = _ROOT_DIR / 'build' / 'src'
+    source_tree = Path(args.source_tree) if args.source_tree else _ROOT_DIR / 'build' / 'src'
     downloads_cache = _ROOT_DIR / 'build' / 'download_cache'
 
-    if not args.ci or not (source_tree / 'BUILD.gn').exists():
+    # --build-only compiles an already-staged tree (typically moved to a short path); skip
+    # the whole download/unpack/prune/patch/branding/domain-sub staging block entirely.
+    if not args.build_only and (not args.ci or not (source_tree / 'BUILD.gn').exists()):
         # Setup environment
         source_tree.mkdir(parents=True, exist_ok=True)
         downloads_cache.mkdir(parents=True, exist_ok=True)
@@ -592,6 +622,12 @@ def main():
             None
         )
 
+    if args.stage_only:
+        get_logger().info('--stage-only: staged tree ready (patches + DIG branding + domain '
+                          'substitution); skipping rust-toolchain copy, gn gen, and ninja. '
+                          'Move build/src to a short path and run gn+ninja there.')
+        return
+
     # Check if rust-toolchain folder has been populated
     HOST_CPU_IS_64BIT = sys.maxsize > 2**32
     RUST_DIR_DST = source_tree / 'third_party' / 'rust-toolchain'
@@ -599,7 +635,7 @@ def main():
     RUST_DIR_SRC86 = source_tree / 'third_party' / 'rust-toolchain-x86'
     RUST_DIR_SRCARM = source_tree / 'third_party' / 'rust-toolchain-arm'
     RUST_FLAG_FILE = RUST_DIR_DST / 'INSTALLED_VERSION'
-    if not args.ci or not RUST_FLAG_FILE.exists():
+    if (not args.ci and not args.build_only) or not RUST_FLAG_FILE.exists():
         # Directories to copy from source to target folder
         DIRS_TO_COPY = ['bin', 'lib']
 
@@ -628,7 +664,7 @@ def main():
         with open(RUST_FLAG_FILE, 'w') as f:
             subprocess.run([source_tree / 'third_party' / 'rust-toolchain-x64' / 'rustc' / 'bin' / 'rustc.exe', '--version'], stdout=f)
 
-    if not args.ci or not (source_tree / 'out/Default').exists():
+    if (not args.ci and not args.build_only) or not (source_tree / 'out/Default').exists():
         # Output args.gn
         (source_tree / 'out/Default').mkdir(parents=True)
         gn_flags = (_ROOT_DIR / 'ungoogled-chromium' / 'flags.gn').read_text(encoding=ENCODING)
@@ -646,7 +682,7 @@ def main():
     # Enter source tree to run build commands
     os.chdir(source_tree)
 
-    if not args.ci or not os.path.exists('out\\Default\\gn.exe'):
+    if (not args.ci and not args.build_only) or not os.path.exists('out\\Default\\gn.exe'):
         # Run GN bootstrap
         _run_build_process(
             sys.executable, 'tools\\gn\\bootstrap\\bootstrap.py', '-o', 'out\\Default\\gn.exe',
@@ -655,7 +691,7 @@ def main():
         # Run gn gen
         _run_build_process('out\\Default\\gn.exe', 'gen', 'out\\Default', '--fail-on-unused-args')
 
-    if not args.ci or not os.path.exists('third_party\\rust-toolchain\\bin\\bindgen.exe'):
+    if (not args.ci and not args.build_only) or not os.path.exists('third_party\\rust-toolchain\\bin\\bindgen.exe'):
         # Build bindgen
         _run_build_process(
             sys.executable,
