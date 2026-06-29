@@ -1135,7 +1135,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,785 @@
+@@ -0,0 +1,1037 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1169,6 +1169,7 @@
 +#include "base/process/launch.h"
 +#include "base/synchronization/lock.h"
 +#include "base/task/thread_pool.h"
++#include "base/time/time.h"
 +#include "build/build_config.h"
 +#include "base/json/json_reader.h"
 +#include "base/json/json_writer.h"
@@ -1269,6 +1270,129 @@
 +constexpr int64_t kMaxResourceBytes = 64 * 1024 * 1024;
 +// Output data pipe capacity.
 +constexpr uint32_t kPipeSize = 64 * 1024;
++
++// ---------------------------------------------------------------------------
++// Source resolution (the CONSUMER side of the serve/consume split, SYSTEM.md →
++// "Roles — serving vs consuming"). The chia:// read path tries, IN ORDER:
++//   1. a LOCAL standalone dig-node's read RPC if reachable — preferred
++//      (local/offline/contributes), addressed http://dig.local FIRST then
++//      http://localhost:<port> (default 8080);
++//   2. else the browser's OWN in-process dig-node (the FFI dig::CallDigRpc),
++//      which itself reaches rpc.dig.net when it has no cached capsule.
++// Whichever source serves the bytes, the loader ALWAYS verifies the Merkle
++// proof against the on-chain root and decrypts client-side, fail-closed — the
++// source is NEVER trusted. The PURE policy (ordering/port/host/probe-path/TTL)
++// is mirrored from dig/node/dig_source_resolution.mjs (which carries the Node
++// tests for it); change BOTH in lockstep.
++// ---------------------------------------------------------------------------
++
++// dig-node's canonical local addresses, in preference order. dig.local has NO
++// port (the dig-installer maps it to the node's privileged :80 loopback
++// listener); the localhost listener uses the default 8080.
++constexpr char kDigLocalBase[] = "http://dig.local";
++constexpr char kLocalhostBase[] = "http://localhost:8080";
++// The node serves JSON-RPC at POST "/" and a cheap liveness probe at GET
++// "/health" (dig-companion server.rs). We probe /health, never a content
++// method, so a failed probe is fast and side-effect free.
++constexpr char kHealthPath[] = "/health";
++// Cap on a single local-node JSON-RPC response (a windowed dig.getContent reply
++// is ~kRpcChunk base64-inflated + proof overhead). 5 MiB matches the per-window
++// reasoning above and stays within SimpleURLLoader's bounded-download limit.
++constexpr size_t kLocalNodeMaxResponse = 5 * 1024 * 1024;
++// How long a reachability verdict is trusted before re-probing (5s): short
++// enough that starting/stopping the node is noticed quickly, long enough that a
++// page's many subresources never each re-probe a down node.
++constexpr base::TimeDelta kProbeTtl = base::Seconds(5);
++
++// Command-line switch that DISABLES consuming from a local standalone dig-node
++// (the browser then consumes via its in-process node only — always fully
++// functional, a consumer needs no local node). Mirrors the user setting; the
++// default (switch absent) prefers the local node.
++constexpr char kDisableLocalDigNodeSwitch[] = "disable-local-dig-node";
++
++bool LocalNodePreferred() {
++  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
++      kDisableLocalDigNodeSwitch);
++}
++
++// The ordered local-node base URLs to try, honoring the setting. Empty when the
++// local node is disabled.
++std::vector<std::string> LocalNodeCandidates() {
++  if (!LocalNodePreferred()) {
++    return {};
++  }
++  return {kDigLocalBase, kLocalhostBase};
++}
++
++// A live dig-node /health body confirms BOTH status:"ok" and mode:"local-node"
++// (so some other service squatting the port is rejected). Anything malformed →
++// false (fail safe: fall through to the in-process node).
++bool IsHealthyDigNode(const std::string& body) {
++  std::optional<base::Value> v =
++      base::JSONReader::Read(body, base::JSON_PARSE_RFC);
++  if (!v || !v->is_dict()) {
++    return false;
++  }
++  const base::DictValue& d = v->GetDict();
++  const std::string* status = d.FindString("status");
++  const std::string* mode = d.FindString("mode");
++  return status && *status == "ok" && mode && *mode == "local-node";
++}
++
++// Short-TTL reachability memo, keyed by base URL, shared across loader
++// instances (a navigation + all its subresources). Mirrors ReachabilityMemo in
++// dig_source_resolution.mjs: probe a given local node at most once per
++// kProbeTtl rather than on every subresource.
++base::Lock& ProbeMemoLock() {
++  static base::NoDestructor<base::Lock> lock;
++  return *lock;
++}
++std::map<std::string, std::pair<bool, base::TimeTicks>>& ProbeMemo() {
++  static base::NoDestructor<std::map<std::string, std::pair<bool, base::TimeTicks>>>
++      memo;
++  return *memo;
++}
++// Returns the cached verdict for `base_url` if still fresh, else nullopt.
++std::optional<bool> GetProbeVerdict(const std::string& base_url) {
++  base::AutoLock lock(ProbeMemoLock());
++  auto it = ProbeMemo().find(base_url);
++  if (it == ProbeMemo().end()) {
++    return std::nullopt;
++  }
++  if (base::TimeTicks::Now() - it->second.second >= kProbeTtl) {
++    return std::nullopt;  // stale
++  }
++  return it->second.first;
++}
++void PutProbeVerdict(const std::string& base_url, bool reachable) {
++  base::AutoLock lock(ProbeMemoLock());
++  ProbeMemo()[base_url] = {reachable, base::TimeTicks::Now()};
++}
++
++// Traffic annotation for the loopback POSTs/GETs to a local standalone dig-node.
++// These never leave the machine (dig.local / localhost), carry no user identity
++// (credentials omitted), and only move blind ciphertext + Merkle proofs which
++// are re-verified locally.
++const net::NetworkTrafficAnnotationTag kDigNodeTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("dig_local_node_rpc", R"(
++        semantics {
++          sender: "DIG Browser chia:// loader"
++          description:
++            "Reads DIG content from a local standalone dig-node running on this "
++            "machine (http://dig.local or http://localhost:8080) when present, "
++            "as the preferred source over the browser's in-process node. The "
++            "response (blind ciphertext + a Merkle inclusion proof) is verified "
++            "against the on-chain root and decrypted locally."
++          trigger: "Navigating to a chia:// address or loading a chia:// subresource."
++          data: "A JSON-RPC dig.getContent/dig.getAnchoredRoot request (store id, "
++                "root, retrieval key, offset/length). No user identity."
++          destination: LOCAL
++        }
++        policy {
++          cookies_allowed: NO
++          setting: "Disable with the --disable-local-dig-node command-line switch."
++          policy_exception_justification: "Loopback-only; no off-machine traffic."
++        })");
 +
 +// MIME from the resource key extension (mirrors the extension's ctForPath and
 +// net/url_request/dig_protocol_handler.cc MimeForResourceKey).
@@ -1404,6 +1528,136 @@
 +
 +  ~DigURLLoader() override = default;
 +
++  // ---- Source resolution -------------------------------------------------
++  // Run one DIG JSON-RPC request (`request_json`) against the BEST available
++  // source and deliver the response body to `on_response`. Resolution order
++  // (SYSTEM.md "Roles — serving vs consuming"): a reachable LOCAL standalone
++  // dig-node first (http://dig.local then http://localhost:8080), else the
++  // in-process node (FFI). The body is the node's JSON-RPC response either way;
++  // the caller always verifies + decrypts it client-side (the source is never
++  // trusted). `on_response` runs on this sequence.
++  using NodeResponseCallback = base::OnceCallback<void(std::string)>;
++  void CallNode(std::string request_json, NodeResponseCallback on_response) {
++    std::vector<std::string> candidates = LocalNodeCandidates();
++    // Drop candidates the memo says are freshly unreachable; keep the rest in
++    // order (a fresh-reachable one is POSTed directly, an unknown one is probed
++    // first). This mirrors resolveSourcePlan() in dig_source_resolution.mjs.
++    std::vector<std::string> plan;
++    for (const std::string& base_url : candidates) {
++      std::optional<bool> verdict = GetProbeVerdict(base_url);
++      if (verdict.has_value() && !*verdict) {
++        continue;  // known-down, still fresh → skip without a probe
++      }
++      plan.push_back(base_url);
++    }
++    TryNextSource(std::move(plan), 0, std::move(request_json),
++                  std::move(on_response));
++  }
++
++  // Walk the local-node `plan` from `index`; on exhaustion fall back to the
++  // in-process node (FFI). Held by value across the async hops so the plan and
++  // the request/callback survive each probe/POST.
++  void TryNextSource(std::vector<std::string> plan,
++                     size_t index,
++                     std::string request_json,
++                     NodeResponseCallback on_response) {
++    if (index >= plan.size()) {
++      // Terminal fallback: the browser's own in-process node. BLOCKING FFI, so
++      // run it on a MayBlock thread and reply on this sequence.
++      base::ThreadPool::PostTaskAndReplyWithResult(
++          FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
++          base::BindOnce(&dig::CallDigRpc, std::move(request_json)),
++          std::move(on_response));
++      return;
++    }
++    const std::string base_url = plan[index];
++    std::optional<bool> verdict = GetProbeVerdict(base_url);
++    if (verdict.has_value() && *verdict) {
++      // Freshly reachable → POST the request directly (no re-probe).
++      PostToLocalNode(base_url, std::move(plan), index, std::move(request_json),
++                      std::move(on_response));
++      return;
++    }
++    // Unknown → probe GET /health first.
++    auto resource_request = std::make_unique<network::ResourceRequest>();
++    resource_request->url = GURL(base_url + kHealthPath);
++    resource_request->method = "GET";
++    resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(resource_request), kDigNodeTrafficAnnotation);
++    loader->SetTimeoutDuration(base::Seconds(2));
++    network::SimpleURLLoader* raw = loader.get();
++    raw->DownloadToString(
++        network_loader_factory_.get(),
++        base::BindOnce(&DigURLLoader::OnHealthProbed, weak_factory_.GetWeakPtr(),
++                       std::move(loader), base_url, std::move(plan), index,
++                       std::move(request_json), std::move(on_response)),
++        /*max_body_size=*/64 * 1024);
++  }
++
++  void OnHealthProbed(std::unique_ptr<network::SimpleURLLoader> loader,
++                      std::string base_url,
++                      std::vector<std::string> plan,
++                      size_t index,
++                      std::string request_json,
++                      NodeResponseCallback on_response,
++                      std::unique_ptr<std::string> body) {
++    bool reachable = body && IsHealthyDigNode(*body);
++    PutProbeVerdict(base_url, reachable);
++    if (reachable) {
++      PostToLocalNode(base_url, std::move(plan), index, std::move(request_json),
++                      std::move(on_response));
++    } else {
++      // This candidate is down — try the next one (or the in-process node).
++      TryNextSource(std::move(plan), index + 1, std::move(request_json),
++                    std::move(on_response));
++    }
++  }
++
++  // POST the JSON-RPC request to a known-reachable local node at `base_url`. On
++  // any transport failure, mark it unreachable and fall through to the next
++  // source so a node that died between probe and POST never breaks the load.
++  void PostToLocalNode(std::string base_url,
++                       std::vector<std::string> plan,
++                       size_t index,
++                       std::string request_json,
++                       NodeResponseCallback on_response) {
++    auto resource_request = std::make_unique<network::ResourceRequest>();
++    resource_request->url = GURL(base_url + "/");
++    resource_request->method = "POST";
++    resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    resource_request->headers.SetHeader("Content-Type", "application/json");
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(resource_request), kDigNodeTrafficAnnotation);
++    loader->AttachStringForUpload(request_json, "application/json");
++    network::SimpleURLLoader* raw = loader.get();
++    raw->DownloadToString(
++        network_loader_factory_.get(),
++        base::BindOnce(&DigURLLoader::OnLocalNodeResponse,
++                       weak_factory_.GetWeakPtr(), std::move(loader),
++                       std::move(base_url), std::move(plan), index,
++                       std::move(request_json), std::move(on_response)),
++        kLocalNodeMaxResponse);
++  }
++
++  void OnLocalNodeResponse(std::unique_ptr<network::SimpleURLLoader> loader,
++                           std::string base_url,
++                           std::vector<std::string> plan,
++                           size_t index,
++                           std::string request_json,
++                           NodeResponseCallback on_response,
++                           std::unique_ptr<std::string> body) {
++    if (body && !body->empty()) {
++      std::move(on_response).Run(std::move(*body));
++      return;
++    }
++    // The node died between probe and POST — invalidate its verdict and try the
++    // next source.
++    PutProbeVerdict(base_url, false);
++    TryNextSource(std::move(plan), index + 1, std::move(request_json),
++                  std::move(on_response));
++  }
++
 +  void Start(const GURL& url) {
 +    // chia://home is the DIG Browser's own home page (the new-tab page points
 +    // here). It is a trusted browser-internal resource embedded in the binary,
@@ -1527,9 +1781,10 @@
 +    StartRootResolve();
 +  }
 +
-+  // Resolve a rootless URN's chain-anchored tip root by calling the in-process
-+  // DIG runtime (dig.getAnchoredRoot) DIRECTLY via FFI on a MayBlock thread —
-+  // the browser process IS the node, so there is no loopback server to POST to.
++  // Resolve a rootless URN's chain-anchored tip root via dig.getAnchoredRoot,
++  // routed through CallNode() — a reachable LOCAL standalone dig-node first,
++  // else the in-process node (FFI). Either way the root is re-validated against
++  // the served content's Merkle proof, so a node cannot lie about the tip.
 +  void StartRootResolve() {
 +    base::DictValue params;
 +    params.Set("store_id", parsed_.store_id);
@@ -1540,11 +1795,9 @@
 +    body.Set("params", std::move(params));
 +    std::string json;
 +    base::JSONWriter::Write(base::Value(std::move(body)), &json);
-+    base::ThreadPool::PostTaskAndReplyWithResult(
-+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-+        base::BindOnce(&dig::CallDigRpc, std::move(json)),
-+        base::BindOnce(&DigURLLoader::OnNodeRootResolved,
-+                       weak_factory_.GetWeakPtr()));
++    CallNode(std::move(json),
++             base::BindOnce(&DigURLLoader::OnNodeRootResolved,
++                            weak_factory_.GetWeakPtr()));
 +  }
 +
 +  void OnNodeRootResolved(std::string body) {
@@ -1608,13 +1861,13 @@
 +    base::JSONWriter::Write(base::Value(std::move(body)), &json);
 +
 +    current_offset_ = offset;
-+    // Call the in-process DIG runtime DIRECTLY via FFI on a MayBlock thread —
-+    // the browser process IS the node. No SimpleURLLoader, no loopback server.
-+    base::ThreadPool::PostTaskAndReplyWithResult(
-+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-+        base::BindOnce(&dig::CallDigRpc, std::move(json)),
-+        base::BindOnce(&DigURLLoader::OnRpcWindowDownloaded,
-+                       weak_factory_.GetWeakPtr()));
++    // Route through CallNode(): a reachable LOCAL standalone dig-node first
++    // (local/offline/contributes), else the in-process node (FFI → rpc.dig.net).
++    // The reassembled ciphertext is Merkle-verified + decrypted client-side
++    // regardless of which source served it.
++    CallNode(std::move(json),
++             base::BindOnce(&DigURLLoader::OnRpcWindowDownloaded,
++                            weak_factory_.GetWeakPtr()));
 +  }
 +
 +  void OnRpcWindowDownloaded(std::string response_body) {
@@ -1845,11 +2098,10 @@
 +  mojo::Receiver<network::mojom::URLLoader> receiver_{this};
 +  mojo::Remote<network::mojom::URLLoaderClient> client_;
 +
-+  // Captured at construction; retained for parity with the factory plumbing.
-+  // The dig:// read path now calls the in-process DIG runtime directly (FFI),
-+  // so this is no longer used for content fetches.
-+  [[maybe_unused]] scoped_refptr<network::SharedURLLoaderFactory>
-+      network_loader_factory_;
++  // Captured at construction. Used to POST/GET to a LOCAL standalone dig-node
++  // over loopback HTTP (CallNode → /health probe + dig.getContent POST) when one
++  // is the preferred source; the in-process node path uses the FFI instead.
++  scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_;
 +
 +  net::dig::ParsedUrn parsed_;
 +  std::string chain_;

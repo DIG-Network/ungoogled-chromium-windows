@@ -62,6 +62,34 @@ The pipeline is **fail-closed**: a decoy, tampered bytes, a wrong root, or a
 wrong/missing salt fail verification or the GCM-SIV tag and surface a branded
 error page — content is never shown unless it verifies *and* decrypts.
 
+### Where `chia://` content is read from (source resolution)
+
+The DIG Browser is a **consumer** in the DIG serve/consume split (`SYSTEM.md` →
+"Roles — serving vs consuming"). For every `chia://` read it picks a source **in
+order**:
+
+1. **A local standalone dig-node**, if one is reachable — preferred, because it
+   is local/offline-capable and contributes to the network. It is addressed
+   `http://dig.local` **first** (the `dig-installer` maps that name to the
+   node's privileged `:80` loopback listener), then `http://localhost:8080` (the
+   node's always-on localhost listener). The browser does a cheap `GET /health`
+   liveness probe (confirming `status:"ok"` + `mode:"local-node"`) and **memoizes
+   the verdict for ~5s**, so a page's many subresources never each re-probe a
+   down node and a single failed probe never stalls a load.
+2. **The browser's own in-process dig-node** otherwise — which itself reaches
+   `rpc.dig.net` when it has no cached capsule.
+
+Either way the served bytes are **always** verified against the on-chain root
+and decrypted on your device — the source is never trusted (fail-closed). So the
+browser is **fully functional standalone** (no local node needed), and when a
+local dig-node *is* present it consumes from it and they share one `.dig` cache.
+
+- **Disable** consuming from a local node (in-process only) with the
+  `--disable-local-dig-node` command-line switch.
+- The pure resolution policy (ordering, port, host, probe path, TTL) lives in
+  [`dig/node/dig_source_resolution.mjs`](dig/node/dig_source_resolution.mjs)
+  with a Node test harness; the native loader mirrors it in C++.
+
 The native crypto (`net/url_request/dig_crypto.cc`) is a byte-for-byte C++ port
 of `digstore-core` (`crypto.rs` / `merkle.rs` / `urn.rs`), so it stays
 byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changing
