@@ -2,31 +2,37 @@
 
 **DIG Browser** is the DIG Network's privacy-respecting desktop browser: a
 clean, professionally branded build of [ungoogled-chromium](//github.com/Eloston/ungoogled-chromium)
-with **native `dig://` protocol support**. Navigate to a `dig://` address and the
+with **native `chia://` protocol support**. Navigate to a `chia://` address and the
 browser resolves the resource from the DIG content network, **verifies it against
 its on-chain Merkle root, and decrypts it on your device** — the same client-side
 verify/decrypt contract used by the DIG Chrome extension, the DIG Hub, and the
 `digstore` CLI (see the ecosystem `SYSTEM.md`).
 
+> **Scheme note.** The user-facing scheme — what you type or click — is
+> **`chia://`** (the canonical DIG Network content scheme, per `SYSTEM.md`). The
+> `urn:dig:` URN namespace and the digstore **§21 remote-transport locator**
+> `dig://<host>/<store_id>` (a developer/wire contract) are unchanged and are
+> NOT the same thing as the user-facing scheme.
+
 It is ungoogled-chromium underneath (no Google services, no telemetry), rebranded
 as a DIG Network product and themed in the DIG brand purple (`#5800D6`).
 
-## What `dig://` does
+## What `chia://` does
 
-`dig://` is a first-class URL scheme. You can type any of these into the address
+`chia://` is a first-class URL scheme. You can type any of these into the address
 bar (or link to them from a page):
 
 ```
-dig://<storeID>[:<root>]/<resourceKey>           # shorthand
-dig://urn:dig:chia:<storeID>[:<root>]/<resourceKey>
+chia://<storeID>[:<root>]/<resourceKey>           # shorthand
+chia://urn:dig:chia:<storeID>[:<root>]/<resourceKey>
 urn:dig:chia:<storeID>[:<root>]/<resourceKey>     # full URN
-dig://<storeID>/index.html?salt=<hex>             # private store
+chia://<storeID>/index.html?salt=<hex>            # private store
 ```
 
 `<storeID>` and `<root>` are 64-char hex; an empty resource path resolves to
 `index.html`. The optional `?salt=<hex>` is the private-store secret salt.
 
-### How `dig://` → `rpc.dig.net` works (the native read path)
+### How `chia://` → `rpc.dig.net` works (the native read path)
 
 The native handler (`net/url_request/dig_protocol_handler.cc`) mirrors the
 reference extension exactly, but in C++ with BoringSSL instead of the WASM
@@ -62,13 +68,53 @@ byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changi
 the URN scheme, retrieval key, Merkle tags, or HKDF/AES parameters here **must**
 be coordinated with the other modules per `SYSTEM.md`.
 
+## Agent / programmatic surface
+
+DIG Browser is self-describing so an agent or dapp can introspect it without
+out-of-band knowledge:
+
+- **Injected wallet (`window.chia`)** — a CHIP-0002 provider injected into every
+  page. It exposes its own identity and capabilities:
+  - `window.chia.isDIG` / `.version` / `.info` (`{isDIG, transport:"native",
+    edition:"browser", scheme:"chia", version}`),
+  - `window.chia.methods` — the supported method catalogue (also over the wire
+    via `request({method:"chip0002_getMethods"})`, answered locally),
+  - `window.chia.errorCodes` and the documented thrown-error codes: `4001`
+    user-rejected/pending, `4100` unauthorized, `4200` unsupported method, `4900`
+    wallet unreachable. The typed contract is
+    [`dig/provider/dig_provider.d.ts`](dig/provider/dig_provider.js).
+  It is byte-aligned with the `dig-chrome-extension`'s `window.chia` so a dapp
+  sees the same surface on either.
+- **Version** — `chia://about` shows the running build (the `{{VERSION}}` token is
+  filled at request time from `version_info`; the same value is substituted into
+  the provider's `window.chia.version` at build time).
+- **`chia://` loader error taxonomy** — a failed load serves the branded error
+  page with a **stable, machine-readable code**: a `<meta name="dig-error-code">`
+  tag + a `data-dig-error` attribute on `<body>` + an `X-Dig-Error` response
+  header. The codes mirror the ecosystem catalogue
+  (docs.dig.net `static/error-codes.json` → `dig-loader`):
+  `DIG_ERR_PROOF_MISMATCH` (tamper / wrong root), `DIG_ERR_DECRYPT_TAG` (wrong
+  key/salt / corrupt), `DIG_ERR_NOT_FOUND` (blind miss / decoy / invalid URN),
+  `DIG_ERR_NETWORK` (node/CDN unreachable or transport failure).
+- **Driveable UI** — the built-in `dig/*` surfaces (`chia://home`, `about`,
+  `welcome`, `shields`) carry stable `data-testid` hooks and ARIA landmarks;
+  `chia://shields` additionally exposes the active page's verification verdict as
+  document `data-dig-scheme` / `data-dig-verified` / `data-dig-source` /
+  `data-dig-capsule` attributes.
+
+The pure JS surfaces have Node test harnesses (no Chromium build needed) under
+`dig/`: `dig/provider/dig_provider.test.mjs`, `dig/dig_surfaces.test.mjs`, and
+`dig/newtab/dig_newtab.test.mjs`. `devutils/validate_patch_hunks.py` checks that
+the hand-edited `.patch` hunk headers stay internally consistent.
+
 ## DIG Browser build layout
 
 DIG-specific changes live in two places:
 
 - **`patches/ungoogled-chromium/windows/windows-add-dig-protocol.patch`** — the
-  `dig://` scheme registration + the native RPC/verify/decrypt handler and its
-  crypto/URN helpers (`net/url_request/dig_{protocol_handler,crypto,urn}.{cc,h}`).
+  `chia://` scheme registration (the C++ identifier `url::kDigScheme` maps to the
+  string `"chia"`) + the native RPC/verify/decrypt handler and its crypto/URN
+  helpers (`net/url_request/dig_{protocol_handler,crypto,urn}.{cc,h}`).
 - **`patches/ungoogled-chromium/windows/windows-dig-branding.patch`** — product
   and company names (DIG Browser / DIG Network) in the channel `BRANDING` file.
 - **`patches/ungoogled-chromium/windows/windows-dig-newtab.patch`** — the brand
