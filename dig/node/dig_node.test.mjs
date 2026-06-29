@@ -358,3 +358,40 @@ test("page: Publish surfaces the task-required catalogued error codes", () => {
     assert.match(html, new RegExp(c), c);
   }
 });
+
+// ---- 4. the "install a standalone dig-node" nudge (no-node) ----------------
+
+test("page: the no-node install nudge links to the dig-installer releases (#89 target)", () => {
+  // Same target the dig-chrome-extension #89 uses — the canonical installer.
+  assert.match(html,
+    /https:\/\/github\.com\/DIG-Network\/dig-installer\/releases/,
+    "links to the dig-installer releases");
+  // The install CTA is addressable.
+  assert.match(html, /data-testid="node-install-link"/, "install link testid");
+});
+
+test("page: the nudge frames it as OPTIONAL value, never 'you can't browse'", () => {
+  // The browser CONSUMES fine without a standalone node — the nudge must say so
+  // (in-process node + rpc.dig.net), so it is never alarmist.
+  assert.match(html, /works fully on its own|no node required|without a node/i,
+    "states the browser works without a standalone node");
+  // The four value props the task asks the nudge to frame.
+  assert.match(html, /full node|run a (full )?node/i, "run a full node");
+  assert.match(html, /contribute/i, "contribute to the network");
+  assert.match(html, /cache/i, "share the .dig cache");
+  // unlocking the My Node controller is the in-browser payoff.
+  assert.match(html, /manage|control|My Node/i, "unlock the My Node controller");
+});
+
+test("page: the install nudge is DISMISSIBLE (calm, not forced)", () => {
+  // A dismiss control + the dismissed-state wiring (persisted so it stays calm).
+  assert.match(html, /data-testid="node-nudge-dismiss"/, "a dismiss control exists");
+  assert.match(html, /aria-label="[^"]*[Dd]ismiss/, "dismiss control is labelled for a11y");
+  // The dismissal is remembered (localStorage) so the nudge doesn't nag.
+  assert.match(html, /localStorage/, "dismissal is persisted");
+});
+
+test("page: the no-node surface stays driveable (testids + recheck preserved)", () => {
+  assert.match(html, /data-testid="node-empty"/, "no-node section");
+  assert.match(html, /data-testid="node-recheck"/, "check-again still present");
+});

@@ -46,7 +46,12 @@
         padding:18px 18px 16px;margin-bottom:16px}
   .card h2{font-family:var(--font-display);font-weight:700;font-size:15.5px;margin:0 0 3px}
   .card .cd{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 14px}
-  /* empty / no-node state */
+  /* empty / no-node state (a calm, dismissible nudge) */
+  #noNode{position:relative}
+  .nudge-x{position:absolute;top:10px;right:12px;width:28px;height:28px;border-radius:8px;
+        border:1px solid var(--line);background:transparent;color:var(--faint);font-size:18px;
+        line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .nudge-x:hover{color:var(--ink);border-color:var(--line-2)}
   .empty{text-align:center;padding:30px 20px}
   .empty .big{font-family:var(--font-display);font-weight:700;font-size:18px;margin:14px 0 7px}
   .empty p{font-size:13px;color:var(--muted);line-height:1.6;max-width:520px;margin:0 auto 6px}
@@ -146,20 +151,32 @@
     </span>
   </header>
 
-  <!-- NO LOCAL NODE: the consumer never needs one — explain + point to install -->
+  <!-- NO LOCAL NODE: the consumer never needs one. This is a CALM, DISMISSIBLE
+       nudge — NOT "you can't browse" (the browser consumes fine via its
+       in-process node + rpc.dig.net). It invites installing a STANDALONE
+       dig-node for the things a node unlocks: running a full node, contributing
+       to the network, sharing the .dig cache, and unlocking the My Node
+       controller here. Link target = the dig-installer releases (the same target
+       the dig-chrome-extension #89 uses). -->
   <section id="noNode" class="card hidden" data-testid="node-empty" aria-label="No local node">
+    <button class="nudge-x" id="nudgeDismiss" type="button"
+            data-testid="node-nudge-dismiss" aria-label="Dismiss this suggestion">&times;</button>
     <div class="empty">
       <div class="dot muted" style="width:14px;height:14px;margin:0 auto"></div>
-      <div class="big">No local DIG node detected</div>
-      <p>The DIG Browser works fully on its own &mdash; it verifies and decrypts
-         <b>chia://</b> content on your device with no node required. A local
-         <b>dig-node</b> is optional: run one to serve content, contribute to the
-         network, and host your own stores. When it is running, manage it here.</p>
+      <div class="big">You&rsquo;re all set &mdash; a node is optional</div>
+      <p>The DIG Browser <b>works fully on its own</b>: it verifies and decrypts
+         <b>chia://</b> content on your device with <b>no node required</b> (it
+         uses its built-in node and rpc.dig.net). Nothing to install to browse.</p>
+      <p>Want more? Install a standalone <b>dig-node</b> to <b>run a full node</b>,
+         <b>contribute to the network</b>, <b>share your .dig cache</b>, and
+         <b>unlock the My Node controller</b> right here &mdash; manage hosted
+         stores, cache, and sync from this page once it&rsquo;s running.</p>
       <p class="note muted" style="display:inline-block;margin-top:14px;text-align:left">
          Looked for a node at <span class="mono">http://dig.local</span> and
          <span class="mono">http://localhost:8080</span>.</p>
       <div class="ctl" style="justify-content:center;margin-top:16px">
-        <a class="btn btn-primary" href="https://dig.net/node" data-testid="node-install-link">Get the dig-node ↗</a>
+        <a class="btn btn-primary" href="https://github.com/DIG-Network/dig-installer/releases"
+           data-testid="node-install-link">Install dig-node ↗</a>
         <button class="btn" id="recheckBtn" type="button" data-testid="node-recheck">Check again</button>
       </div>
     </div>
@@ -702,9 +719,27 @@
     var token = (injected && injected !== TOKEN_PLACEHOLDER) ? injected : null;
     var baseUrl = null;   // the reachable control base, learned at detect time.
 
+    // The no-node nudge is calm + DISMISSIBLE: once dismissed (persisted in
+    // localStorage) it stays hidden so it never nags, even while no node is
+    // detected. The status pill still reads "No local node" — only the inviting
+    // card is suppressed. "Check again" (recheck) re-engages and clears it.
+    var NUDGE_DISMISS_KEY = 'dig-node-nudge-dismissed';
+    function nudgeDismissed(){
+      try { return localStorage.getItem(NUDGE_DISMISS_KEY) === '1'; }
+      catch (_) { return false; }
+    }
+    function setNudgeDismissed(v){
+      try {
+        if (v) localStorage.setItem(NUDGE_DISMISS_KEY, '1');
+        else localStorage.removeItem(NUDGE_DISMISS_KEY);
+      } catch (_) {}
+    }
+
     function setPosture(state){
       docEl.setAttribute('data-dig-node', state);  // agent-readable posture
-      $('noNode').classList.toggle('hidden', state !== 'no-node');
+      // Show the no-node nudge only when there's no node AND it isn't dismissed.
+      var showNudge = state === 'no-node' && !nudgeDismissed();
+      $('noNode').classList.toggle('hidden', !showNudge);
       $('needsToken').classList.toggle('hidden', state !== 'needs-token');
       $('ready').classList.toggle('hidden', state !== 'ready');
       var pill = $('nodePill'), txt = $('nodePillText'), dot = pill.querySelector('.dot');
@@ -881,7 +916,14 @@
     }
     bindDisc('statusRawT','statusRawB');
 
-    $('recheckBtn').addEventListener('click', detectNode);
+    // Dismiss the nudge (calm, not forced): hide the card + remember it.
+    $('nudgeDismiss').addEventListener('click', function(){
+      setNudgeDismissed(true);
+      $('noNode').classList.add('hidden');
+    });
+    // "Check again" re-engages → clear the dismissal so a fresh no-node verdict
+    // shows the nudge again, then re-probe.
+    $('recheckBtn').addEventListener('click', function(){ setNudgeDismissed(false); detectNode(); });
     $('storesRefresh').addEventListener('click', loadStores);
 
     $('tokenApply').addEventListener('click', function(){
