@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import * as mod from "./dig_node_controller.mjs";
+import * as dep from "./dig_deploy_flow.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "dig_node.html"), "utf8");
@@ -175,9 +176,166 @@ test("page: hosted-only features are labeled 'On DIGHub' outbound cards, not fak
   assert.match(html, /data-testid="node-hub-discover"/);
 });
 
-test("page: does NOT implement local publish/deploy (deferred to Pass D)", () => {
-  // Guardrail: the My Node controller surface must not grow a deploy/publish
-  // flow here — that is a separate pass. Catch an accidental add.
-  assert.doesNotMatch(html, /data-testid="node-deploy"/, "no deploy CTA");
-  assert.doesNotMatch(html, /chia:\/\/node\/deploy/, "no deploy route wired");
+// ---- 3. the local PUBLISH / DEPLOY flow (#95 Pass D) -----------------------
+
+// Rebuild the page's restated deploy-flow helpers from its <script> + the
+// constants they close over, exactly like the controller helpers above, so the
+// test exercises the SHIPPED page code (the page can't `import` the module).
+const depConstsSrc = `
+  var STAGE_METHOD = 'dig.stage';
+  var STAGE_ERR = {INVALID_PARAMS:-32602, NOT_A_DIR:-32011, NO_FILES:-32012, OVER_CAP:-32013, COMPILE_IO:-32014};
+  var WALLET_MINT = 'chia_mintStore';
+  var WALLET_ADVANCE = 'chia_advanceStore';
+  var SPEND_BROADCAST = 'broadcast';
+  var DEFAULT_DIG_BASE_UNITS = 100000;
+  var DIG_DECIMALS = 3;
+  var DEPLOY_ERR = {
+    STAGE_INVALID:'DIG_ERR_STAGE_INVALID', STAGE_NOT_A_DIR:'DIG_ERR_STAGE_NOT_A_DIR',
+    STAGE_EMPTY:'DIG_ERR_STAGE_EMPTY', STAGE_OVER_CAP:'DIG_ERR_STAGE_OVER_CAP',
+    STAGE_COMPILE:'DIG_ERR_STAGE_COMPILE',
+    INSUFFICIENT_DIG:'DIG_ERR_INSUFFICIENT_DIG', NOT_FAST_FORWARD:'DIG_ERR_NOT_FAST_FORWARD',
+    WALLET_DECLINED:'DIG_ERR_WALLET_DECLINED', WALLET_UNAUTHORIZED:'DIG_ERR_WALLET_UNAUTHORIZED',
+    BROADCAST_DISABLED:'DIG_ERR_BROADCAST_DISABLED',
+    ANCHOR_TIMEOUT:'DIG_ERR_ANCHOR_TIMEOUT', PUSH_FAILED:'DIG_ERR_PUSH_FAILED',
+    WALLET_UNREACHABLE:'DIG_ERR_WALLET_UNREACHABLE', NODE_UNREACHABLE:'DIG_ERR_NODE_UNREACHABLE',
+    UNKNOWN:'DIG_ERR_UNKNOWN'
+  };
+  var DEPLOY_MODE = {NEW:'new', UPDATE:'update'};
+  var DEPLOY_STATE = {IDLE:'idle', STAGING:'staging', STAGED:'staged', SIGNING:'signing',
+                      ANCHORING:'anchoring', PUSHING:'pushing', DONE:'done', ERROR:'error'};
+  var HAPPY_PATH = [DEPLOY_STATE.IDLE, DEPLOY_STATE.STAGING, DEPLOY_STATE.STAGED,
+                    DEPLOY_STATE.SIGNING, DEPLOY_STATE.ANCHORING, DEPLOY_STATE.PUSHING, DEPLOY_STATE.DONE];
+`;
+const depSrc =
+  depConstsSrc + "\n" +
+  extractFn("nextState") + "\n" +
+  extractFn("buildStageRequest") + "\n" +
+  extractFn("stageErrToDeployErr") + "\n" +
+  extractFn("parseStageResult") + "\n" +
+  extractFn("digAmountForCapsule") + "\n" +
+  extractFn("trimZeros") + "\n" +
+  extractFn("formatDig") + "\n" +
+  extractFn("formatUsd") + "\n" +
+  extractFn("formatXch") + "\n" +
+  extractFn("fmtBytes2") + "\n" +
+  extractFn("buildCostPreview") + "\n" +
+  extractFn("buildMintRequest") + "\n" +
+  extractFn("buildAdvanceRequest") + "\n" +
+  extractFn("classifyWalletError") + "\n" +
+  extractFn("parseSpendResult") + "\n" +
+  extractFn("normalizeHex") + "\n" +
+  extractFn("buildDeployResult") + "\n" +
+  "export {nextState, buildStageRequest, stageErrToDeployErr, parseStageResult, " +
+  "digAmountForCapsule, formatDig, formatUsd, buildCostPreview, buildMintRequest, " +
+  "buildAdvanceRequest, classifyWalletError, parseSpendResult, normalizeHex, buildDeployResult};";
+const depPage = await import("data:text/javascript," + encodeURIComponent(depSrc));
+
+const STAGE_OK = {
+  jsonrpc: "2.0", id: 1,
+  result: {
+    capsule: "aa".repeat(32) + ":" + "bb".repeat(32),
+    store_id: "aa".repeat(32), root: "bb".repeat(32),
+    module_path: "C:/x.dig", size: 104857600,
+    content_address: "dig://" + "aa".repeat(32) + ":" + "bb".repeat(32) + "/",
+    files: 12, ephemeral: true,
+  },
+};
+
+test("page deploy: nextState walks the happy path identically to the module", () => {
+  for (const s of ["idle", "staging", "staged", "signing", "anchoring", "pushing", "done", "error"]) {
+    assert.equal(depPage.nextState(s), dep.nextState(s), `nextState(${s})`);
+  }
+});
+
+test("page deploy: buildStageRequest matches the module (dig.stage params)", () => {
+  const a = depPage.buildStageRequest({ dir: "/x", storeId: "ab".repeat(32) });
+  const b = dep.buildStageRequest({ dir: "/x", storeId: "ab".repeat(32) });
+  assert.deepEqual(a, b);
+  assert.equal(a.method, "dig.stage");
+  assert.throws(() => depPage.buildStageRequest({}), TypeError);
+});
+
+test("page deploy: parseStageResult + stageErrToDeployErr match the module", () => {
+  assert.deepEqual(depPage.parseStageResult(STAGE_OK), dep.parseStageResult(STAGE_OK));
+  for (const code of [-32602, -32011, -32012, -32013, -32014, -99999]) {
+    assert.equal(depPage.stageErrToDeployErr(code), dep.stageErrToDeployErr(code), `code ${code}`);
+  }
+});
+
+test("page deploy: dynamic cost preview matches the module (USD-pegged)", () => {
+  assert.deepEqual(depPage.digAmountForCapsule({ targetUsd: 1, digPriceUsd: 0.05 }),
+                   dep.digAmountForCapsule({ targetUsd: 1, digPriceUsd: 0.05 }));
+  const stage = dep.parseStageResult(STAGE_OK);
+  assert.deepEqual(
+    depPage.buildCostPreview({ stage, digPriceUsd: 0.05, targetUsd: 1, feeMojos: 5000000 }),
+    dep.buildCostPreview({ stage, digPriceUsd: 0.05, targetUsd: 1, feeMojos: 5000000 }));
+  assert.equal(depPage.formatDig(100), dep.formatDig(100));
+  assert.equal(depPage.formatUsd(1), dep.formatUsd(1));
+});
+
+test("page deploy: mint/advance request builders match the module", () => {
+  assert.deepEqual(depPage.buildMintRequest({ digBaseUnits: 20000, label: "S" }),
+                   dep.buildMintRequest({ digBaseUnits: 20000, label: "S" }));
+  assert.deepEqual(
+    depPage.buildAdvanceRequest({ storeId: "ab".repeat(32), newRoot: "cd".repeat(32), digBaseUnits: 20000 }),
+    dep.buildAdvanceRequest({ storeId: "ab".repeat(32), newRoot: "cd".repeat(32), digBaseUnits: 20000 }));
+});
+
+test("page deploy: spend parse + error classification match the module (broadcast gate)", () => {
+  const signed = { status: "signed", success: true, spendBundle: { coinSpends: 3, aggregatedSignature: "ab" }, storeId: "0x" + "aa".repeat(32) };
+  assert.deepEqual(depPage.parseSpendResult(signed), dep.parseSpendResult(signed));
+  assert.equal(depPage.parseSpendResult(signed).broadcasted, false, "signed = not pushed");
+  for (const e of [{ code: 4001 }, { code: 4100 }, { code: 4900 },
+                   { message: "not enough DIG" }, { message: "non-fast-forward" }]) {
+    assert.equal(depPage.classifyWalletError(e), dep.classifyWalletError(e), JSON.stringify(e));
+  }
+});
+
+test("page deploy: buildDeployResult matches the module (capsule/URN/chia://)", () => {
+  const stage = dep.parseStageResult(STAGE_OK);
+  const spend = dep.parseSpendResult({ status: "broadcast", success: true,
+    spendBundle: { coinSpends: 3, aggregatedSignature: "ab" },
+    storeId: "0x" + "11".repeat(32), newRoot: "0x" + "22".repeat(32) });
+  assert.deepEqual(depPage.buildDeployResult({ mode: "new", stage, spend }),
+                   dep.buildDeployResult({ mode: "new", stage, spend }));
+});
+
+test("page: the Publish panel + its flow steps carry stable testids", () => {
+  for (const t of [
+    "node-publish", "node-publish-setup", "node-publish-mode-new", "node-publish-mode-update",
+    "node-publish-dir", "node-publish-store", "node-publish-label", "node-publish-stage",
+    "node-publish-review", "node-publish-review-stats", "node-publish-cost",
+    "node-publish-capsule-toggle", "node-publish-capsule", "node-publish-sign", "node-publish-cancel",
+    "node-publish-progress", "node-publish-done", "node-publish-result-url",
+    "node-publish-result-capsule", "node-publish-another", "node-publish-error",
+    "node-publish-advanced-toggle", "node-publish-salt", "node-publish-writer", "node-publish-fee",
+  ]) {
+    assert.match(html, new RegExp(`data-testid="${t}"`), `data-testid=${t}`);
+  }
+});
+
+test("page: Publish uses plain language with the capsule behind disclosure", () => {
+  assert.match(html, /Launch a site/, "plain 'launch a site'");
+  assert.match(html, /Publish an update/, "plain 'publish an update'");
+  // the protocol-level capsule id is behind a 'Capsule details' expander.
+  assert.match(html, /Capsule details/);
+  assert.match(html, /storeId:rootHash/, "capsule defined");
+});
+
+test("page: Publish exposes the deploy state as a document data-* for agents", () => {
+  assert.match(html, /data-dig-deploy/, "writes data-dig-deploy posture");
+  assert.match(html, /data-dig-deploy-error/, "error code attribute");
+});
+
+test("page: Publish wires the engine contracts (dig.stage + wallet store spends)", () => {
+  assert.match(html, /dig\.stage/, "stages via dig.stage");
+  assert.match(html, /chia_mintStore/, "mints via chia_mintStore");
+  assert.match(html, /chia_advanceStore/, "advances via chia_advanceStore");
+});
+
+test("page: Publish surfaces the task-required catalogued error codes", () => {
+  for (const c of ["DIG_ERR_INSUFFICIENT_DIG", "DIG_ERR_NOT_FAST_FORWARD",
+                   "DIG_ERR_ANCHOR_TIMEOUT", "DIG_ERR_PUSH_FAILED", "DIG_ERR_BROADCAST_DISABLED"]) {
+    assert.match(html, new RegExp(c), c);
+  }
 });

@@ -97,6 +97,27 @@
   pre{font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.28);
       border:1px solid var(--line);border-radius:10px;padding:11px;overflow:auto;max-height:280px;margin:0}
   .hosted-card{margin-top:8px}
+  /* publish flow: mode segmented control, fields, progress steps */
+  .seg{display:inline-flex;background:rgba(0,0,0,.24);border:1px solid var(--line-2);
+       border-radius:var(--pill);padding:3px;gap:3px;margin-bottom:13px}
+  .seg-b{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:12.5px;
+       border:none;background:none;color:var(--muted);border-radius:var(--pill);padding:7px 15px}
+  .seg-b.on{background:var(--grad);color:#fff}
+  .fld{display:block;margin-bottom:11px}
+  .fld .lbl{display:block;font-family:var(--font-display);font-weight:600;font-size:11px;
+       letter-spacing:.02em;color:var(--faint);margin:0 0 6px 2px}
+  .fld .in{width:100%;flex:none}
+  select.in{appearance:none;-webkit-appearance:none}
+  .steps{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+  .steps li{display:flex;align-items:center;gap:11px;font-size:13px;color:var(--muted)}
+  .steps li .si{width:22px;height:22px;border-radius:50%;flex:none;display:flex;
+       align-items:center;justify-content:center;font-size:11px;font-weight:700;
+       border:1px solid var(--line-2);color:var(--faint);background:rgba(0,0,0,.2)}
+  .steps li.active{color:var(--ink)}
+  .steps li.active .si{border-color:var(--violet);color:#fff;background:var(--grad)}
+  .steps li.done .si{border-color:rgba(52,210,126,.4);color:var(--ok);
+       background:rgba(52,210,126,.13)}
+  .steps li.done{color:var(--ink)}
   /* "On DIGHub" outbound cards — hosted features the local node does NOT do */
   .hub-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:4px}
   .hub-card{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.18);border:1px solid var(--line);
@@ -163,6 +184,136 @@
 
   <!-- READY: the live controller surface -->
   <div id="ready" class="hidden" data-testid="node-ready">
+
+    <!-- Publish / Deploy — the local-hub centrepiece (#95 Pass D). Launch a new
+         site (MINT) or publish an update (ADVANCE), staged + signed on THIS
+         device by the in-process DIG wallet. Plain language by default; the
+         capsule (storeId:rootHash) sits behind disclosure. -->
+    <section class="card" id="publishCard" aria-label="Publish or deploy"
+             data-testid="node-publish">
+      <h2>Publish</h2>
+      <p class="cd">Put a folder of files on the DIG Network from this device.
+         Your <b>DIG Wallet</b> signs it; no hub account needed. <b>Launch a
+         site</b> creates a new <b>store</b>; <b>Publish an update</b> advances
+         one you own. Each publish is a <b>capsule</b>
+         (<span class="mono">storeId:rootHash</span>).</p>
+
+      <!-- step 0 — choose what + where -->
+      <div id="pubSetup" data-testid="node-publish-setup">
+        <div class="seg" role="tablist" aria-label="Publish mode">
+          <button class="seg-b on" id="pubModeNew" type="button" role="tab"
+                  aria-selected="true" data-testid="node-publish-mode-new">Launch a site</button>
+          <button class="seg-b" id="pubModeUpdate" type="button" role="tab"
+                  aria-selected="false" data-testid="node-publish-mode-update">Publish an update</button>
+        </div>
+
+        <label class="fld">
+          <span class="lbl">Folder to publish</span>
+          <input class="in" id="pubDir" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="absolute path, e.g. C:\sites\my-blog" data-testid="node-publish-dir"
+                 aria-label="Folder path to publish">
+        </label>
+
+        <label class="fld hidden" id="pubStoreField">
+          <span class="lbl">Store to update</span>
+          <select class="in" id="pubStore" data-testid="node-publish-store"
+                  aria-label="Store to update"></select>
+        </label>
+
+        <div class="ctl" style="margin-top:6px">
+          <input class="in" id="pubLabel" type="text" autocomplete="off" maxlength="120"
+                 placeholder="name (optional)" data-testid="node-publish-label"
+                 aria-label="Site name (optional)">
+        </div>
+
+        <div class="disc">
+          <button class="disc-t" id="pubAdvT" type="button" aria-expanded="false"
+                  aria-controls="pubAdvB" data-testid="node-publish-advanced-toggle">
+            <span class="caret" aria-hidden="true">&#9656;</span>Advanced
+          </button>
+          <div class="disc-b hidden" id="pubAdvB">
+            <label class="fld">
+              <span class="lbl">Private store salt (64-hex, optional)</span>
+              <input class="in" id="pubSalt" type="text" autocomplete="off" spellcheck="false"
+                     placeholder="leave blank for a public store" data-testid="node-publish-salt"
+                     aria-label="Private store salt">
+            </label>
+            <label class="fld">
+              <span class="lbl">Deploy-token writer seed (64-hex, optional)</span>
+              <input class="in" id="pubWriter" type="text" autocomplete="off" spellcheck="false"
+                     placeholder="sign an update with a writer deploy token"
+                     data-testid="node-publish-writer" aria-label="Writer deploy-token seed">
+            </label>
+            <label class="fld">
+              <span class="lbl">Network fee (XCH, optional)</span>
+              <input class="in" id="pubFee" type="number" min="0" step="0.000001"
+                     placeholder="auto-estimate" data-testid="node-publish-fee"
+                     aria-label="Network fee in XCH">
+            </label>
+          </div>
+        </div>
+
+        <div class="ctl" style="margin-top:12px">
+          <button class="btn btn-primary" id="pubStage" type="button"
+                  data-testid="node-publish-stage">Review</button>
+        </div>
+      </div>
+
+      <!-- step 1 — staged: file/size + cost preview, then sign -->
+      <div id="pubReview" class="hidden" data-testid="node-publish-review" aria-live="polite">
+        <div class="stats" id="pubReviewStats" data-testid="node-publish-review-stats"></div>
+        <div class="note muted" id="pubCost" data-testid="node-publish-cost"></div>
+        <div class="disc">
+          <button class="disc-t" id="pubCapT" type="button" aria-expanded="false"
+                  aria-controls="pubCapB" data-testid="node-publish-capsule-toggle">
+            <span class="caret" aria-hidden="true">&#9656;</span>Capsule details
+          </button>
+          <div class="disc-b hidden" id="pubCapB">
+            <pre id="pubCapsule" data-testid="node-publish-capsule"></pre>
+          </div>
+        </div>
+        <div class="ctl" style="margin-top:12px">
+          <button class="btn btn-primary" id="pubSign" type="button"
+                  data-testid="node-publish-sign">Sign &amp; publish</button>
+          <button class="btn" id="pubCancel" type="button"
+                  data-testid="node-publish-cancel">Back</button>
+        </div>
+      </div>
+
+      <!-- step 2 — progress (signing → anchoring → pushing) -->
+      <div id="pubProgress" class="hidden" data-testid="node-publish-progress"
+           role="status" aria-live="polite">
+        <ol class="steps" id="pubSteps"></ol>
+      </div>
+
+      <!-- step 3 — done: result -->
+      <div id="pubDone" class="hidden" data-testid="node-publish-done" aria-live="polite">
+        <div class="note ok" id="pubDoneMsg"></div>
+        <div class="list" style="margin-top:10px">
+          <div class="row"><div class="grow">
+            <div class="meta">Open it in the browser</div>
+            <a class="nm" id="pubDoneUrl" data-testid="node-publish-result-url" href="#"></a>
+          </div></div>
+        </div>
+        <div class="disc">
+          <button class="disc-t" id="pubDoneCapT" type="button" aria-expanded="false"
+                  aria-controls="pubDoneCapB" data-testid="node-publish-result-capsule-toggle">
+            <span class="caret" aria-hidden="true">&#9656;</span>Capsule &amp; URN
+          </button>
+          <div class="disc-b hidden" id="pubDoneCapB"><pre id="pubDoneCap"
+               data-testid="node-publish-result-capsule"></pre></div>
+        </div>
+        <div class="ctl" style="margin-top:12px">
+          <button class="btn btn-primary" id="pubAnother" type="button"
+                  data-testid="node-publish-another">Publish another</button>
+        </div>
+      </div>
+
+      <!-- error -->
+      <div id="pubError" class="note bad hidden" data-testid="node-publish-error"
+           role="alert" data-dig-deploy-error=""></div>
+    </section>
+
     <!-- Status -->
     <section class="card" aria-label="Node status">
       <h2>Status</h2>
@@ -337,6 +488,197 @@
       return {state:'ready', canControl:true};
     }
 
+    // ---- PURE deploy-flow policy (single source: -------------------------
+    // dig/node/dig_deploy_flow.mjs; restated here verbatim so this page stays a
+    // self-contained embeddable resource. dig_node.test.mjs extracts these by
+    // name and asserts they match the module + the dig.stage / dig-wallet
+    // contracts — they CANNOT drift. Mirror BOTH on any change. ------------
+
+    // dig.stage (dig-node handle_rpc) + wallet store-spend method names.
+    var STAGE_METHOD = 'dig.stage';
+    var STAGE_ERR = {INVALID_PARAMS:-32602, NOT_A_DIR:-32011, NO_FILES:-32012,
+                     OVER_CAP:-32013, COMPILE_IO:-32014};
+    var WALLET_MINT = 'chia_mintStore';
+    var WALLET_ADVANCE = 'chia_advanceStore';
+    var SPEND_BROADCAST = 'broadcast';
+    var DEFAULT_DIG_BASE_UNITS = 100000;  // 100 DIG (3 decimals)
+    var DIG_DECIMALS = 3;
+    // Catalogued deploy error codes (DIG_ERR_* — aligned with the chia:// loader
+    // taxonomy + docs.dig.net error-codes.json).
+    var DEPLOY_ERR = {
+      STAGE_INVALID:'DIG_ERR_STAGE_INVALID', STAGE_NOT_A_DIR:'DIG_ERR_STAGE_NOT_A_DIR',
+      STAGE_EMPTY:'DIG_ERR_STAGE_EMPTY', STAGE_OVER_CAP:'DIG_ERR_STAGE_OVER_CAP',
+      STAGE_COMPILE:'DIG_ERR_STAGE_COMPILE',
+      INSUFFICIENT_DIG:'DIG_ERR_INSUFFICIENT_DIG', NOT_FAST_FORWARD:'DIG_ERR_NOT_FAST_FORWARD',
+      WALLET_DECLINED:'DIG_ERR_WALLET_DECLINED', WALLET_UNAUTHORIZED:'DIG_ERR_WALLET_UNAUTHORIZED',
+      BROADCAST_DISABLED:'DIG_ERR_BROADCAST_DISABLED',
+      ANCHOR_TIMEOUT:'DIG_ERR_ANCHOR_TIMEOUT', PUSH_FAILED:'DIG_ERR_PUSH_FAILED',
+      WALLET_UNREACHABLE:'DIG_ERR_WALLET_UNREACHABLE', NODE_UNREACHABLE:'DIG_ERR_NODE_UNREACHABLE',
+      UNKNOWN:'DIG_ERR_UNKNOWN'
+    };
+    var DEPLOY_MODE = {NEW:'new', UPDATE:'update'};
+    var DEPLOY_STATE = {IDLE:'idle', STAGING:'staging', STAGED:'staged', SIGNING:'signing',
+                        ANCHORING:'anchoring', PUSHING:'pushing', DONE:'done', ERROR:'error'};
+    var HAPPY_PATH = [DEPLOY_STATE.IDLE, DEPLOY_STATE.STAGING, DEPLOY_STATE.STAGED,
+                      DEPLOY_STATE.SIGNING, DEPLOY_STATE.ANCHORING, DEPLOY_STATE.PUSHING,
+                      DEPLOY_STATE.DONE];
+
+    function nextState(state){
+      if (state === DEPLOY_STATE.DONE || state === DEPLOY_STATE.ERROR) return state;
+      var i = HAPPY_PATH.indexOf(state);
+      if (i === -1 || i === HAPPY_PATH.length - 1) return state;
+      return HAPPY_PATH[i + 1];
+    }
+
+    function buildStageRequest(args){
+      args = args || {};
+      var dir = args.dir;
+      if (typeof dir !== 'string' || !dir.trim()) {
+        throw new TypeError('buildStageRequest: a non-empty `dir` is required');
+      }
+      var params = {dir:dir};
+      if (args.storeId) params.store_id = args.storeId;
+      if (args.salt) params.salt = args.salt;
+      if (args.metadata && typeof args.metadata === 'object') params.metadata = args.metadata;
+      return {jsonrpc:'2.0', id:(Number.isInteger(args.id)?args.id:1),
+              method:STAGE_METHOD, params:params};
+    }
+
+    function stageErrToDeployErr(code){
+      switch (code) {
+        case STAGE_ERR.INVALID_PARAMS: return DEPLOY_ERR.STAGE_INVALID;
+        case STAGE_ERR.NOT_A_DIR: return DEPLOY_ERR.STAGE_NOT_A_DIR;
+        case STAGE_ERR.NO_FILES: return DEPLOY_ERR.STAGE_EMPTY;
+        case STAGE_ERR.OVER_CAP: return DEPLOY_ERR.STAGE_OVER_CAP;
+        case STAGE_ERR.COMPILE_IO: return DEPLOY_ERR.STAGE_COMPILE;
+        default: return DEPLOY_ERR.STAGE_COMPILE;
+      }
+    }
+
+    function parseStageResult(response){
+      var v = response;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {
+        return {ok:false, code:DEPLOY_ERR.STAGE_COMPILE, message:'Malformed response from the node.'}; } }
+      if (!v || typeof v !== 'object')
+        return {ok:false, code:DEPLOY_ERR.NODE_UNREACHABLE, message:'No response from the node.'};
+      if (v.error && typeof v.error === 'object')
+        return {ok:false, code:stageErrToDeployErr(v.error.code), message:v.error.message || 'Staging failed.'};
+      var r = v.result || {};
+      if (!r.capsule || !r.store_id || !r.root)
+        return {ok:false, code:DEPLOY_ERR.STAGE_COMPILE, message:'The node returned an incomplete staging result.'};
+      return {ok:true, capsule:r.capsule, storeId:r.store_id, root:r.root,
+              modulePath:r.module_path || '', size:Number(r.size)||0,
+              contentAddress:r.content_address || ('dig://'+r.store_id+':'+r.root+'/'),
+              files:Number(r.files)||0, ephemeral:!!r.ephemeral};
+    }
+
+    function digAmountForCapsule(args){
+      args = args || {};
+      var targetUsd = (isFinite(args.targetUsd) && args.targetUsd > 0) ? args.targetUsd : 1;
+      var price = Number(args.digPriceUsd);
+      if (!isFinite(price) || price <= 0)
+        return {digBaseUnits:DEFAULT_DIG_BASE_UNITS, dig:DEFAULT_DIG_BASE_UNITS/Math.pow(10,DIG_DECIMALS),
+                targetUsd:targetUsd, digPriceUsd:null, pegged:false};
+      var dig = targetUsd / price;
+      var units = Math.max(1, Math.round(dig * Math.pow(10, DIG_DECIMALS)));
+      return {digBaseUnits:units, dig:units/Math.pow(10,DIG_DECIMALS),
+              targetUsd:targetUsd, digPriceUsd:price, pegged:true};
+    }
+
+    function trimZeros(s){ return String(s).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1'); }
+    function formatDig(dig){
+      var n = Number(dig)||0;
+      var s = n>=100 ? n.toFixed(0) : n>=1 ? n.toFixed(2) : n.toFixed(3);
+      return trimZeros(s)+' $DIG';
+    }
+    function formatUsd(usd){ return '$'+(Number(usd)||0).toFixed(2); }
+    function formatXch(xch){
+      var n = Number(xch)||0; if (n===0) return '0';
+      if (n < 1e-6) return n.toExponential(2); return trimZeros(n.toFixed(9));
+    }
+    function fmtBytes2(bytes){
+      var n = Number(bytes)||0; if (n < 1024) return n+' B';
+      var u=['KiB','MiB','GiB','TiB'], i=-1; do { n/=1024; i++; } while (n>=1024 && i<u.length-1);
+      return n.toFixed(n<10?1:0)+' '+u[i];
+    }
+
+    function buildCostPreview(args){
+      args = args || {};
+      var stage = args.stage || {};
+      var amount = digAmountForCapsule({targetUsd:args.targetUsd, digPriceUsd:args.digPriceUsd});
+      var feeMojos = (isFinite(args.feeMojos) && args.feeMojos>0) ? Math.round(args.feeMojos) : 0;
+      var feeXch = feeMojos/1e12;
+      var usd = amount.pegged ? amount.dig*amount.digPriceUsd : null;
+      return {dig:amount.dig, digBaseUnits:amount.digBaseUnits, digText:formatDig(amount.dig),
+              usd:usd, usdText:(usd==null?'—':formatUsd(usd)), pegged:amount.pegged,
+              feeMojos:feeMojos, feeXch:feeXch, feeText:(feeMojos?(formatXch(feeXch)+' XCH'):'auto'),
+              sizeBytes:Number(stage.size)||0, sizeText:fmtBytes2(Number(stage.size)||0),
+              files:Number(stage.files)||0};
+    }
+
+    function buildMintRequest(args){
+      args = args || {}; var params = {};
+      if (isFinite(args.digBaseUnits) && args.digBaseUnits>0) params.digAmount = Math.round(args.digBaseUnits);
+      if (args.label) params.label = args.label;
+      if (args.description) params.description = args.description;
+      if (isFinite(args.feeMojos) && args.feeMojos>0) params.fee = Math.round(args.feeMojos);
+      return {method:WALLET_MINT, params:params};
+    }
+
+    function buildAdvanceRequest(args){
+      args = args || {};
+      if (!args.storeId) throw new TypeError('buildAdvanceRequest: `storeId` is required');
+      if (!args.newRoot) throw new TypeError('buildAdvanceRequest: `newRoot` is required');
+      var params = {storeId:args.storeId, newRoot:args.newRoot};
+      if (isFinite(args.digBaseUnits) && args.digBaseUnits>0) params.digAmount = Math.round(args.digBaseUnits);
+      if (args.label) params.label = args.label;
+      if (args.description) params.description = args.description;
+      if (isFinite(args.feeMojos) && args.feeMojos>0) params.fee = Math.round(args.feeMojos);
+      if (args.writerSeed) params.writerSeed = args.writerSeed;
+      return {method:WALLET_ADVANCE, params:params};
+    }
+
+    function classifyWalletError(err){
+      var e = err || {};
+      if (e.code === 4001) return DEPLOY_ERR.WALLET_DECLINED;
+      if (e.code === 4100) return DEPLOY_ERR.WALLET_UNAUTHORIZED;
+      if (e.code === 4200) return DEPLOY_ERR.WALLET_UNAUTHORIZED;
+      if (e.code === 4900) return DEPLOY_ERR.WALLET_UNREACHABLE;
+      var msg = String(e.message || e.error || '').toLowerCase();
+      if (/insufficient|not enough|over[_ ]?quota|over the (dig|store)/.test(msg)) return DEPLOY_ERR.INSUFFICIENT_DIG;
+      if (/fast[- ]?forward|root has advanced|behind|stale root/.test(msg)) return DEPLOY_ERR.NOT_FAST_FORWARD;
+      if (/declin|reject|denied/.test(msg)) return DEPLOY_ERR.WALLET_DECLINED;
+      if (/broadcast/.test(msg) && /disabl/.test(msg)) return DEPLOY_ERR.BROADCAST_DISABLED;
+      if (/timed? ?out|timeout/.test(msg)) return DEPLOY_ERR.ANCHOR_TIMEOUT;
+      return DEPLOY_ERR.UNKNOWN;
+    }
+
+    function parseSpendResult(result){
+      var v = result;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) {
+        return {ok:false, code:DEPLOY_ERR.UNKNOWN, message:'Malformed wallet response.'}; } }
+      if (!v || typeof v !== 'object')
+        return {ok:false, code:DEPLOY_ERR.WALLET_UNREACHABLE, message:'No response from the wallet.'};
+      if (v.success === false || v.error)
+        return {ok:false, code:classifyWalletError(v), message:v.error || 'The spend failed.'};
+      return {ok:true, storeId:v.storeId || v.launcherId, root:v.newRoot,
+              coinId:v.coinId || v.newCoinId, digPaid:v.digPaid, broadcasted:v.status === SPEND_BROADCAST};
+    }
+
+    function normalizeHex(h){ return String(h==null?'':h).replace(/^0x/i,'').toLowerCase(); }
+
+    function buildDeployResult(args){
+      args = args || {};
+      var mode = args.mode, stage = args.stage || {}, spend = args.spend || {};
+      var storeId = normalizeHex(mode === DEPLOY_MODE.NEW
+        ? (spend.storeId || stage.storeId) : (stage.storeId || spend.storeId));
+      var root = normalizeHex(spend.root || stage.root);
+      var hubBase = (args.hubBase || 'https://hub.dig.net').replace(/\/+$/, '');
+      return {capsule:storeId+':'+root, storeId:storeId, root:root,
+              urn:'urn:dig:chia:'+storeId+':'+root, chiaUrl:'chia://'+root+'.'+storeId+'/',
+              hubUrl:hubBase+'/store/'+storeId, broadcasted:!!spend.broadcasted};
+    }
+
     // ---- DOM glue (impure) -------------------------------------------------
 
     var $ = function(id){ return document.getElementById(id); };
@@ -437,6 +779,9 @@
         var stores = (c.result && c.result.stores) || [];
         wrap.innerHTML = '';
         empty.classList.toggle('hidden', stores.length > 0);
+        // Feed the Publish → "Publish an update" store picker from the stores
+        // this node holds (a publisher's own node holds the stores it serves).
+        populatePublishStores(stores);
         stores.forEach(function(s){
           var row = document.createElement('div');
           row.className = 'row'; row.setAttribute('data-testid','node-store-row');
@@ -461,6 +806,25 @@
           row.appendChild(btn); wrap.appendChild(row);
         });
       });
+    }
+
+    // Fill the Publish → update store picker with the node's stores so the user
+    // chooses one to advance rather than pasting a 64-hex id.
+    function populatePublishStores(stores){
+      var sel = $('pubStore'); if (!sel) return;
+      var prev = sel.value;
+      sel.innerHTML = '';
+      if (!stores.length) {
+        var o = document.createElement('option'); o.value=''; o.textContent='No stores on this node yet';
+        sel.appendChild(o); return;
+      }
+      stores.forEach(function(s){
+        var o = document.createElement('option');
+        o.value = s.store_id;
+        o.textContent = s.store_id.slice(0,10)+'…'+s.store_id.slice(-6);
+        sel.appendChild(o);
+      });
+      if (prev) sel.value = prev;
     }
 
     function loadCache(){
@@ -556,6 +920,302 @@
       });
     });
 
+    // ---- PUBLISH / DEPLOY glue (the local-hub centrepiece) -----------------
+    // Drives the pure deploy-flow policy above: pick a folder → dig.stage
+    // (compile a capsule on the local node) → cost preview (dynamic USD-pegged
+    // $DIG ÷ live price + XCH fee) → sign in the in-process wallet (window.chia
+    // chia_mintStore / chia_advanceStore) → anchor (watch) → §21 push → result.
+
+    var deployMode = DEPLOY_MODE.NEW;
+    var stagedCapsule = null;   // the last successful parseStageResult
+    var stagedCost = null;      // the last buildCostPreview
+
+    // POST a plain (non-control) JSON-RPC request to the node that answers
+    // /health (the dig-node serves dig.stage at the SAME "/" as control.*; the
+    // method is reachable on the loopback base the page already detected). Used
+    // for dig.stage — staging needs no control token (it is a build, no admin).
+    function nodeRpc(req){
+      return fetch(baseUrl + RPC_PATH, {
+        method:'POST', credentials:'omit', cache:'no-store',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify(req)
+      }).then(function(r){ return r.text(); }).catch(function(){ return ''; });
+    }
+
+    // Best-effort LIVE USD-pegged price for the cost preview. The hub's
+    // /v1/pricing is the canonical peg (dig_amount = target_usd ÷ live DIG
+    // price); we read the price ONLY to PREVIEW + to send the exact digAmount —
+    // the publish itself is fully local + signed in-process. Falls back to the
+    // protocol default (100 $DIG) when the feed is unreachable, so a flaky feed
+    // never blocks a publish (mirrors the hub's own fallback).
+    var HUB_PRICING_URL = 'https://hub.dig.net/v1/pricing';
+    function fetchPricing(){
+      return fetch(HUB_PRICING_URL, {method:'GET', credentials:'omit', cache:'no-store'})
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){
+          if (!j) return null;
+          var price = Number(j.dig_usd) || 0;
+          // mint_dig is the authoritative capsule amount (base units) when present.
+          var mintUnits = j.mint_dig != null ? Math.round(Number(j.mint_dig)) : null;
+          return {digPriceUsd:price > 0 ? price : null, mintBaseUnits:(mintUnits>0?mintUnits:null),
+                  mintUsd:Number(j.mint_usd) || null};
+        })
+        .catch(function(){ return null; });
+    }
+
+    function deployError(code, msg){
+      var box = $('pubError');
+      box.textContent = msg || code; box.setAttribute('data-dig-deploy-error', code || '');
+      box.classList.remove('hidden');
+      docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.ERROR);
+    }
+    function clearDeployError(){
+      $('pubError').classList.add('hidden'); $('pubError').setAttribute('data-dig-deploy-error','');
+    }
+    // Friendly, catalogued message for a DEPLOY_ERR code.
+    function deployErrMessage(code, fallback){
+      var M = {};
+      M[DEPLOY_ERR.STAGE_NOT_A_DIR] = "That folder doesn't exist on this device. Check the path.";
+      M[DEPLOY_ERR.STAGE_EMPTY] = "That folder is empty — there's nothing to publish.";
+      M[DEPLOY_ERR.STAGE_OVER_CAP] = "Those files are larger than one capsule can hold. Split them across stores.";
+      M[DEPLOY_ERR.STAGE_INVALID] = "The folder path or options weren't valid.";
+      M[DEPLOY_ERR.STAGE_COMPILE] = "Couldn't compile that folder into a capsule.";
+      M[DEPLOY_ERR.INSUFFICIENT_DIG] = "Not enough $DIG in your wallet to cover this capsule.";
+      M[DEPLOY_ERR.NOT_FAST_FORWARD] = "This store has moved on since you last pulled it. Refresh and try again.";
+      M[DEPLOY_ERR.WALLET_DECLINED] = "You declined the signature in your wallet. Nothing was signed or spent.";
+      M[DEPLOY_ERR.WALLET_UNAUTHORIZED] = "Your wallet couldn't sign this (approve this site, or unlock the wallet).";
+      M[DEPLOY_ERR.BROADCAST_DISABLED] = "Signed, but publishing to mainnet is turned off on this build.";
+      M[DEPLOY_ERR.ANCHOR_TIMEOUT] = "The on-chain confirmation is taking a while. It may still land — check later.";
+      M[DEPLOY_ERR.PUSH_FAILED] = "Published on-chain, but sharing the files with a remote failed. Retry the push.";
+      M[DEPLOY_ERR.WALLET_UNREACHABLE] = "The DIG Wallet isn't reachable. Open it and try again.";
+      M[DEPLOY_ERR.NODE_UNREACHABLE] = "Couldn't reach your node to stage the folder.";
+      return M[code] || fallback || 'Publishing failed.';
+    }
+
+    function setMode(m){
+      deployMode = m;
+      $('pubModeNew').classList.toggle('on', m === DEPLOY_MODE.NEW);
+      $('pubModeNew').setAttribute('aria-selected', String(m === DEPLOY_MODE.NEW));
+      $('pubModeUpdate').classList.toggle('on', m === DEPLOY_MODE.UPDATE);
+      $('pubModeUpdate').setAttribute('aria-selected', String(m === DEPLOY_MODE.UPDATE));
+      $('pubStoreField').classList.toggle('hidden', m !== DEPLOY_MODE.UPDATE);
+    }
+
+    function showPubStep(step){
+      // step ∈ {'setup','review','progress','done'}
+      $('pubSetup').classList.toggle('hidden', step !== 'setup');
+      $('pubReview').classList.toggle('hidden', step !== 'review');
+      $('pubProgress').classList.toggle('hidden', step !== 'progress');
+      $('pubDone').classList.toggle('hidden', step !== 'done');
+    }
+
+    // Render the staging → signing → anchoring → pushing checklist for a state.
+    var PUB_STEP_LABELS = [
+      [DEPLOY_STATE.SIGNING, 'Signing in your wallet'],
+      [DEPLOY_STATE.ANCHORING, 'Anchoring on-chain'],
+      [DEPLOY_STATE.PUSHING, 'Sharing on the network']
+    ];
+    function renderProgress(state){
+      docEl.setAttribute('data-dig-deploy', state);
+      var order = [DEPLOY_STATE.SIGNING, DEPLOY_STATE.ANCHORING, DEPLOY_STATE.PUSHING];
+      var cur = order.indexOf(state);
+      var html = '';
+      PUB_STEP_LABELS.forEach(function(pair, i){
+        var cls = i < cur ? 'done' : (i === cur ? 'active' : '');
+        var mark = i < cur ? '✓' : String(i + 1);
+        html += '<li class="'+cls+'" data-testid="node-publish-step"><span class="si">'+mark+
+                '</span>'+esc(pair[1])+'</li>';
+      });
+      $('pubSteps').innerHTML = html;
+    }
+
+    // STAGE: compile the chosen folder into a capsule on the local node, then
+    // show the file/size + the dynamic cost preview.
+    function doStage(){
+      clearDeployError();
+      var dir = $('pubDir').value.trim();
+      if (!dir) { deployError(DEPLOY_ERR.STAGE_INVALID, 'Enter the folder to publish.'); return; }
+      var args = {dir:dir};
+      var salt = $('pubSalt').value.trim(); if (salt) args.salt = salt;
+      if (deployMode === DEPLOY_MODE.UPDATE) {
+        var sid = $('pubStore').value;
+        if (!sid) { deployError(DEPLOY_ERR.STAGE_INVALID, 'Pick the store to update.'); return; }
+        args.storeId = sid;
+      }
+      var label = $('pubLabel').value.trim();
+      if (label) args.metadata = {name:label};
+      var req;
+      try { req = buildStageRequest(args); }
+      catch (e) { deployError(DEPLOY_ERR.STAGE_INVALID, 'Enter the folder to publish.'); return; }
+
+      docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.STAGING);
+      $('pubStage').disabled = true; $('pubStage').textContent = 'Compiling…';
+      nodeRpc(req).then(function(raw){
+        var staged = parseStageResult(raw || null);
+        if (!staged.ok) {
+          $('pubStage').disabled = false; $('pubStage').textContent = 'Review';
+          deployError(staged.code, deployErrMessage(staged.code, staged.message));
+          return;
+        }
+        stagedCapsule = staged;
+        // fetch the live peg for the preview (best effort); send the exact amount.
+        fetchPricing().then(function(p){
+          var feeXch = parseFloat($('pubFee').value);
+          var feeMojos = (isFinite(feeXch) && feeXch > 0) ? Math.round(feeXch * 1e12) : 0;
+          var cost = buildCostPreview({stage:staged,
+            digPriceUsd:(p && p.digPriceUsd) || null, targetUsd:1, feeMojos:feeMojos});
+          // Prefer the hub's authoritative mint_dig base units when present.
+          if (p && p.mintBaseUnits) { cost.digBaseUnits = p.mintBaseUnits;
+            cost.dig = p.mintBaseUnits/1000; cost.digText = formatDig(cost.dig);
+            if (p.mintUsd) { cost.usd = p.mintUsd; cost.usdText = formatUsd(p.mintUsd); cost.pegged = true; } }
+          stagedCost = cost;
+          renderReview(staged, cost);
+          $('pubStage').disabled = false; $('pubStage').textContent = 'Review';
+          docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.STAGED);
+        });
+      });
+    }
+
+    function renderReview(staged, cost){
+      $('pubReviewStats').innerHTML =
+        statCard('Files', cost.files) +
+        statCard('Size', cost.sizeText) +
+        statCard('Cost', cost.digText, cost.pegged ? cost.usdText : 'protocol default') +
+        statCard('Network fee', cost.feeText);
+      var costMsg = cost.pegged
+        ? ('You’ll pay '+cost.digText+' ('+cost.usdText+') for this capsule, plus the XCH network fee. '
+           + 'Pricing is set in USD and floats with the $DIG price.')
+        : ('You’ll pay the protocol default of '+cost.digText+' (live pricing was unavailable), '
+           + 'plus the XCH network fee.');
+      $('pubCost').textContent = costMsg;
+      $('pubCapsule').textContent =
+        'capsule       ' + staged.capsule + '\n' +
+        'store_id      ' + staged.storeId + (staged.ephemeral ? '  (preview — the real id is assigned at mint)' : '') + '\n' +
+        'root          ' + staged.root + '\n' +
+        'content URN   ' + staged.contentAddress + '\n' +
+        'module        ' + staged.modulePath;
+      showPubStep('review');
+    }
+
+    // SIGN → ANCHOR → PUSH. The wallet builds + signs the spend (and pushes when
+    // broadcasting is enabled); §21 push is then triggered on the node so others
+    // can read the new capsule.
+    function doPublish(){
+      clearDeployError();
+      if (!stagedCapsule || !stagedCost) return;
+      var label = $('pubLabel').value.trim();
+      var feeXch = parseFloat($('pubFee').value);
+      var feeMojos = (isFinite(feeXch) && feeXch > 0) ? Math.round(feeXch * 1e12) : 0;
+      var writer = $('pubWriter').value.trim();
+      var rpcReq;
+      try {
+        if (deployMode === DEPLOY_MODE.NEW) {
+          rpcReq = buildMintRequest({digBaseUnits:stagedCost.digBaseUnits, label:label,
+            feeMojos:feeMojos});
+        } else {
+          rpcReq = buildAdvanceRequest({storeId:stagedCapsule.storeId, newRoot:stagedCapsule.root,
+            digBaseUnits:stagedCost.digBaseUnits, label:label, feeMojos:feeMojos,
+            writerSeed:writer || undefined});
+        }
+      } catch (e) { deployError(DEPLOY_ERR.STAGE_INVALID, String(e && e.message || e)); return; }
+
+      showPubStep('progress');
+      renderProgress(DEPLOY_STATE.SIGNING);
+
+      walletRequest(rpcReq.method, rpcReq.params).then(function(res){
+        var spend = parseSpendResult(res);
+        if (!spend.ok) { showPubStep('review'); deployError(spend.code, deployErrMessage(spend.code, spend.message)); return; }
+        // Anchor (watch). The wallet pushed the bundle when broadcasting is on;
+        // when it is off the spend is signed-but-not-pushed — surface that as a
+        // non-fatal warning. We don't busy-poll the chain here (the loader pins
+        // the anchored root on next read); show the step then finish.
+        renderProgress(DEPLOY_STATE.ANCHORING);
+        setTimeout(function(){
+          // §21 push so other consumers can read the new capsule. Trigger the
+          // node's sync (best effort, control-gated); a failure is non-fatal —
+          // the capsule is already on-chain.
+          renderProgress(DEPLOY_STATE.PUSHING);
+          pushCapsule(spend).then(function(pushOk){
+            var out = buildDeployResult({mode:deployMode, stage:stagedCapsule, spend:spend});
+            finishPublish(out, spend, pushOk);
+          });
+        }, 350);
+      });
+    }
+
+    // Reach the in-process wallet via the injected provider (window.chia). The
+    // page is served over chia:// so the provider is present; if not, surface a
+    // clean unreachable error. Returns the raw result OR a thrown-error shape we
+    // classify.
+    function walletRequest(method, params){
+      var prov = window.chia;
+      if (!prov || typeof prov.request !== 'function') {
+        return Promise.resolve({success:false, error:'wallet unreachable', code:4900});
+      }
+      // Ensure the origin is approved first (chia:// is first-party but connect()
+      // makes the gate explicit + returns a clean code on reject).
+      return prov.request({method:'chip0002_connect', params:{eager:true}})
+        .catch(function(){ /* eager may not be approved yet — request() will gate */ })
+        .then(function(){ return prov.request({method:method, params:params}); })
+        .then(function(data){ return data; })
+        .catch(function(err){ return {success:false, error:(err && err.message)||'wallet error', code:(err && err.code)}; });
+    }
+
+    // §21 push of the freshly-published capsule so other consumers can read it.
+    // Uses the node's control sync trigger (best effort); returns true on push,
+    // false if it isn't available (non-fatal — the capsule is on-chain already).
+    function pushCapsule(spend){
+      return call(CONTROL_METHODS.syncTrigger, {store:spend.storeId}).then(function(c){
+        return c.kind === 'ok';
+      }).catch(function(){ return false; });
+    }
+
+    function finishPublish(out, spend, pushOk){
+      docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.DONE);
+      var msg;
+      if (!spend.broadcasted) {
+        msg = 'Compiled and signed your capsule — but publishing to mainnet is turned off on this build, so nothing was spent or shared yet.';
+      } else if (!pushOk) {
+        msg = 'Published on-chain. Sharing the files with a remote is still in progress — they’ll be reachable shortly.';
+      } else {
+        msg = (deployMode === DEPLOY_MODE.NEW ? 'Your site is live on the DIG Network.' : 'Your update is live on the DIG Network.');
+      }
+      $('pubDoneMsg').textContent = msg;
+      var a = $('pubDoneUrl'); a.textContent = out.chiaUrl; a.setAttribute('href', out.chiaUrl);
+      $('pubDoneCap').textContent =
+        'capsule   ' + out.capsule + '\n' +
+        'chia://    ' + out.chiaUrl + '\n' +
+        'URN       ' + out.urn + '\n' +
+        'on DIGHUb ' + out.hubUrl;
+      showPubStep('done');
+    }
+
+    function resetPublish(){
+      clearDeployError(); stagedCapsule = null; stagedCost = null;
+      $('pubDir').value=''; $('pubLabel').value=''; $('pubSalt').value='';
+      $('pubWriter').value=''; $('pubFee').value='';
+      docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.IDLE);
+      showPubStep('setup');
+    }
+
+    // wire the publish controls.
+    $('pubModeNew').addEventListener('click', function(){ setMode(DEPLOY_MODE.NEW); });
+    $('pubModeUpdate').addEventListener('click', function(){ setMode(DEPLOY_MODE.UPDATE); });
+    bindDisc('pubAdvT','pubAdvB');
+    bindDisc('pubCapT','pubCapB');
+    bindDisc('pubDoneCapT','pubDoneCapB');
+    $('pubStage').addEventListener('click', doStage);
+    $('pubSign').addEventListener('click', doPublish);
+    $('pubCancel').addEventListener('click', function(){ showPubStep('setup'); docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.IDLE); });
+    $('pubAnother').addEventListener('click', resetPublish);
+
+    // If the URL asks to start a flow (chia://node?publish=new|update), open it.
+    (function(){
+      var q = new URLSearchParams(location.search || '');
+      var p = q.get('publish');
+      if (p === 'update') setMode(DEPLOY_MODE.UPDATE); else setMode(DEPLOY_MODE.NEW);
+      docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.IDLE);
+    })();
+
     // Agent surface: chia://node?describe=1 emits the node's OpenRPC control
     // contract as JSON (the page becomes a machine entry point). Falls back to a
     // small descriptor when no node answers, so an agent always gets structure.
@@ -595,6 +1255,19 @@
       buildControlRequest:buildControlRequest, controlHeaders:controlHeaders,
       isLocalDigNode:isLocalDigNode, classifyControlResponse:classifyControlResponse,
       nodeSurfaceState:nodeSurfaceState, CONTROL_METHODS:CONTROL_METHODS, CONTROL_ERR:CONTROL_ERR
+    };
+    // Expose the pure deploy-flow policy too (drives the Publish panel; the
+    // agent/test surface reads these without scraping the DOM).
+    window.__digDeploy = {
+      STAGE_METHOD:STAGE_METHOD, STAGE_ERR:STAGE_ERR, WALLET_MINT:WALLET_MINT,
+      WALLET_ADVANCE:WALLET_ADVANCE, SPEND_BROADCAST:SPEND_BROADCAST,
+      DEPLOY_ERR:DEPLOY_ERR, DEPLOY_MODE:DEPLOY_MODE, DEPLOY_STATE:DEPLOY_STATE,
+      nextState:nextState, buildStageRequest:buildStageRequest, parseStageResult:parseStageResult,
+      stageErrToDeployErr:stageErrToDeployErr, digAmountForCapsule:digAmountForCapsule,
+      buildCostPreview:buildCostPreview, formatDig:formatDig, formatUsd:formatUsd,
+      buildMintRequest:buildMintRequest, buildAdvanceRequest:buildAdvanceRequest,
+      parseSpendResult:parseSpendResult, classifyWalletError:classifyWalletError,
+      buildDeployResult:buildDeployResult, normalizeHex:normalizeHex
     };
   })();
  </script>

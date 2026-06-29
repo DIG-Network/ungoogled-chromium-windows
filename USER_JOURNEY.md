@@ -156,6 +156,38 @@ entry. It exposes the native local-cache controls via a Mojo handler
 
 ---
 
+## 7. My Node — run it, and publish from it (`chia://node`)
+
+When a local **dig-node** is running, `chia://node` ("My Node",
+`dig/node/dig_node.html`) is its controller: status, hosted stores (pin/unpin),
+cache, §21 sync, upstream — over the node's loopback `control.*` RPC, gated by a
+control token the browser injects on this device (see the README "Run & manage
+your node"). With no node present the page just explains that and links to
+install one — consumption never needs a node.
+
+My Node also has a **Publish** panel — the browser-as-local-hub centrepiece. It
+puts a folder on the DIG Network **from this device**, signed by the in-process
+**DIG Wallet**, no hub account needed:
+
+- **Launch a site** — pick a folder → the node compiles it into a **capsule**
+  (`dig.stage`) → a **cost preview** (the dynamic, USD-pegged **$DIG** amount ÷
+  live price + the XCH network fee) → sign in the wallet (`chia_mintStore`) →
+  anchor on-chain → §21 push → result: the **capsule** (`storeId:rootHash`), the
+  `chia://` address to open it, and a DIGHub link.
+- **Publish an update** — pick a store you own + a folder → `dig.stage` → cost →
+  `chia_advanceStore` (or a writer **deploy token**) → anchor → §21 push.
+- Plain language by default; the capsule id, module path, and URN sit behind
+  "Capsule details" / "Advanced". The spend is **broadcast-gated** (pushed only
+  when the wallet runs with `DIG_WALLET_ALLOW_BROADCAST=1`) and never hand-rolled
+  (built via `digstore-chain`). The Home "+ Publish" button opens this flow
+  (`chia://node?publish=new`).
+
+**Hand-offs:** Publish → on-chain mint/advance via the in-process wallet + §21
+push to a remote (default `rpc.dig.net` / DIGHub, or a self-hosted remote).
+Hosted-only features (handles, discovery) are labeled "On DIGHub ↗" cards.
+
+---
+
 ## Surface map (quick reference)
 
 | Surface | URL | Source | Role |
@@ -165,13 +197,18 @@ entry. It exposes the native local-cache controls via a Mojo handler
 | About | `chia://about` | `dig/about/dig_about.html` | What DIG Browser is + version |
 | DIG identity panel | `chia://shields` | `dig/shields/dig_shields.html` | Verification + privacy posture readout (capsule) |
 | DIG Wallet | `chia://wallet` | in-process DIG runtime | The built-in Chia wallet |
+| My Node + Publish | `chia://node` | `dig/node/dig_node.html` | Run/manage the local node + local launch & deploy |
 | Settings → DIG | `chia://settings` (→ `/dig`) | `windows-dig-settings-section.patch` | Local-cache controls |
 | Injected provider | `window.chia` | `dig/provider/dig_provider.js` | CHIP-0002 wallet bridge for pages |
 
 ## Ecosystem hand-offs
 
 - **DIGHUb** (`hub.dig.net`) — publish/manage stores; the DIG Wallet is the
-  account. Reached from the home "+ Publish" button and Apps card.
+  account. Reached from the home Apps card and the My Node "On DIGHub ↗" cards.
+  The home "+ Publish" button now opens the **local** publish flow
+  (`chia://node` → Publish) — launch/deploy on this device — with DIGHub offered
+  as an alternate path. (Hosted-only features — handles, discovery, the price
+  peg `/v1/pricing` — still come from DIGHub.)
 - **docs.dig.net** — protocol / CLI / build docs. Reached from Apps + footer.
 - **dig.net** — marketing site. Reached from the explicit "DIG Network ↗"
   footer link (the brand logo goes to `chia://home`, not the marketing site).

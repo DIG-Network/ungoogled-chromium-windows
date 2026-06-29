@@ -113,8 +113,41 @@ node's `control.*` admin RPCs over loopback only.
   [`dig/node/dig_node_controller.mjs`](dig/node/dig_node_controller.mjs) with a
   Node test harness; the page restates it and `dig/node/dig_node.test.mjs` guards
   the two against drift and against the dig-node contract.
-- Local **publishing / deploy** from My Node is a separate, later pass — it is not
-  wired here.
+
+### Publish from the browser — local launch & deploy (`chia://node` → Publish)
+
+My Node has a **Publish** panel — the browser-as-local-hub centrepiece. It puts a
+folder of files on the DIG Network **from this device**, signed by the in-process
+**DIG Wallet**, with no hub spend service:
+
+- **Launch a site** — pick a folder → the local node compiles it into a
+  **capsule** (`dig.stage`) → a **cost preview** (the dynamic, USD-pegged **$DIG**
+  amount ÷ live price + the XCH network fee) → sign in the wallet
+  (`chia_mintStore`) → anchor on-chain → §21 push so others can read it →
+  result: the **capsule** (`storeId:rootHash`), the `chia://` URN, and a DIGHub
+  link.
+- **Publish an update** — pick a store you own + a folder → `dig.stage` → cost →
+  `chia_advanceStore` (or a writer **deploy token**) → anchor → §21 push.
+- **Plain language, progressive disclosure.** "Launch a site" / "Publish an
+  update" by default; the capsule / `storeId:rootHash`, the compiled module path,
+  and the URN live behind "Capsule details" / "Advanced" expanders. The deploy
+  posture is exposed as a document `data-dig-deploy` attribute
+  (`idle`/`staging`/`staged`/`signing`/`anchoring`/`pushing`/`done`/`error`) and
+  failures as `data-dig-deploy-error` carrying a stable code.
+- **Catalogued error codes** (`DIG_ERR_*`, aligned with the loader taxonomy +
+  `docs.dig.net` `error-codes.json`): `DIG_ERR_INSUFFICIENT_DIG`,
+  `DIG_ERR_NOT_FAST_FORWARD`, `DIG_ERR_ANCHOR_TIMEOUT`, `DIG_ERR_PUSH_FAILED`,
+  `DIG_ERR_BROADCAST_DISABLED`, plus the staging codes
+  (`DIG_ERR_STAGE_EMPTY`/`_OVER_CAP`/…).
+- **Broadcast-gated.** The wallet signs the spend; it is pushed to mainnet only
+  when the wallet runs with `DIG_WALLET_ALLOW_BROADCAST=1` (otherwise
+  signed-but-not-pushed — the panel says so). A publish never hand-rolls a spend:
+  the wallet builds it via `digstore-chain`.
+- The pure flow policy (state machine, `dig.stage` + wallet request/result, the
+  dynamic cost preview, error-code mapping) lives in
+  [`dig/node/dig_deploy_flow.mjs`](dig/node/dig_deploy_flow.mjs) with a Node test
+  harness; the page restates it and `dig/node/dig_node.test.mjs` guards the two
+  against drift and against the dig-node / dig-wallet engine contracts.
 
 The native crypto (`net/url_request/dig_crypto.cc`) is a byte-for-byte C++ port
 of `digstore-core` (`crypto.rs` / `merkle.rs` / `urn.rs`), so it stays
@@ -154,13 +187,16 @@ out-of-band knowledge:
   `welcome`, `shields`, `node`) carry stable `data-testid` hooks and ARIA
   landmarks; `chia://shields` exposes the active page's verification verdict as
   document `data-dig-scheme` / `data-dig-verified` / `data-dig-source` /
-  `data-dig-capsule` attributes, and `chia://node` exposes its controller posture
-  as `data-dig-node` (`no-node` / `needs-token` / `ready`).
+  `data-dig-capsule` attributes, `chia://node` exposes its controller posture as
+  `data-dig-node` (`no-node` / `needs-token` / `ready`), and the My Node Publish
+  panel exposes the deploy posture as `data-dig-deploy`
+  (`idle`…`done`/`error`) plus `data-dig-deploy-error` (a stable `DIG_ERR_*` code).
 
 The pure JS surfaces have Node test harnesses (no Chromium build needed) under
 `dig/`: `dig/provider/dig_provider.test.mjs`, `dig/dig_surfaces.test.mjs`,
 `dig/newtab/dig_newtab.test.mjs`, `dig/node/dig_source_resolution.test.mjs`,
-`dig/node/dig_node_controller.test.mjs`, and `dig/node/dig_node.test.mjs`.
+`dig/node/dig_node_controller.test.mjs`, `dig/node/dig_deploy_flow.test.mjs`, and
+`dig/node/dig_node.test.mjs`.
 `devutils/validate_patch_hunks.py` checks that the hand-edited `.patch` hunk
 headers stay internally consistent.
 
