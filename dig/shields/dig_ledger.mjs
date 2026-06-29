@@ -1,7 +1,7 @@
 // DIG Browser per-resource inclusion-proof LEDGER — the pure model behind the
-// chia://shields per-capsule proof list.
+// dig://shields per-capsule proof list.
 //
-// WHY this exists: chia://shields already shows the AGGREGATE verdict for the
+// WHY this exists: dig://shields already shows the AGGREGATE verdict for the
 // active page (verified / served-locally) plus the capsule (storeId:rootHash)
 // disclosure. But a capsule is many resources, each with its OWN Merkle
 // inclusion proof that the loader verifies client-side, fail-closed. This module
@@ -14,10 +14,10 @@
 // accumulator in C++ (a process-global LedgerStore keyed by capsule), recording
 // the SAME {resourcePath, storeId, rootHash, inclusionProofPassed, errorCode}
 // tuple as each resource is served + verified, and exposes it to the shields
-// WebUI via a same-origin chia://-served JSON data blob
-// (chia://shields/ledger?host=… — a path under the shields host, so the panel's
+// WebUI via a same-origin dig://-served JSON data blob
+// (dig://shields/ledger?host=… — a path under the shields host, so the panel's
 // fetch is never CORS-blocked) — the same embedded-resource idiom the loader
-// already uses for chia://node and chia://about. The shields page (dig/shields/dig_shields.html)
+// already uses for dig://node and dig://about. The shields page (dig/shields/dig_shields.html)
 // restates groupLedger() verbatim (it is a self-contained embeddable resource
 // that cannot import this module) and dig_shields.test.mjs guards that copy. Any
 // change to the entry shape, the capsule key, or the grouping must be made in
@@ -146,7 +146,7 @@ export class LedgerStore {
  * not mutate its input.
  *
  * @param {Array<object>} entries the ledger entries (from {@link LedgerStore#entriesFor}
- *   or the chia://shields/ledger JSON blob). Non-arrays are treated as empty.
+ *   or the dig://shields/ledger JSON blob). Non-arrays are treated as empty.
  * @returns {{
  *   passed: Array<object>, failed: Array<object>,
  *   passedCount: number, failedCount: number, total: number,

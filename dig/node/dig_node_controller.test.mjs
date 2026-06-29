@@ -1,7 +1,7 @@
 // Test harness for the My Node controller policy (dig/node/dig_node_controller.mjs).
 //
 // A full Chromium build is infeasible in CI, so the *pure* controller policy the
-// chia://node surface drives — the control endpoints + canonical method names,
+// dig://node surface drives — the control endpoints + canonical method names,
 // building an authorized control.* request, parsing /health + /openrpc.json, the
 // catalogued error-code mapping, and the surface enabled/disabled decision —
 // lives in one JS module this harness exercises directly. The dig_node.html page

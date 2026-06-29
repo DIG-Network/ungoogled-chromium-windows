@@ -1,4 +1,4 @@
-// Lightweight test harness for the chia://home (new-tab page) omnibox logic.
+// Lightweight test harness for the dig://home (new-tab page) omnibox logic.
 //
 // A full Chromium build is infeasible in CI for a copy/UX change, so this test
 // exercises the two pure functions that drive the NTP omnibox — classify() and

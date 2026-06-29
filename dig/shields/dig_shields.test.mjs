@@ -1,4 +1,4 @@
-// Agent-surface + no-drift guard for the chia://shields DIG identity panel
+// Agent-surface + no-drift guard for the dig://shields DIG identity panel
 // (dig/shields/dig_shields.html), specifically the per-resource inclusion-proof
 // LEDGER it now renders below the aggregate verdict.
 //
@@ -109,12 +109,12 @@ test("shields exposes the ledger summary as document data-* for agents", () => {
   assert.match(html, /data-dig-ledger-failed/, "writes data-dig-ledger-failed");
 });
 
-test("shields reads the ledger from a same-origin chia:// data feed (not from page prose)", () => {
+test("shields reads the ledger from a same-origin dig:// data feed (not from page prose)", () => {
   // the page fetches the per-tab ledger blob the loader serves; the host is the
   // capsule/origin it opened over (carried in the existing &host= param). The
   // feed is a SAME-ORIGIN path under the shields host so the fetch isn't
   // CORS-blocked.
-  assert.match(html, /chia:\/\/shields\/ledger/, "reads the chia://shields/ledger data feed (same-origin)");
+  assert.match(html, /dig:\/\/shields\/ledger/, "reads the dig://shields/ledger data feed (same-origin)");
   assert.match(html, /fetch\(/, "uses fetch() to read the structured feed");
 });
 

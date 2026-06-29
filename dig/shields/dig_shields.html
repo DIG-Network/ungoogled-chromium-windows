@@ -153,7 +153,7 @@
        (fail-closed). This lists EVERY proof that passed and failed for this
        capsule — building the mental model "capsule root → per-resource inclusion
        proof". Plain check/✗ by default; the proof/root detail behind disclosure.
-       Only shown for a DIG (chia://) page; populated from the chia://shields-
+       Only shown for a DIG (chia://) page; populated from the dig://shields/
        ledger data feed the loader serves for the active tab. -->
   <section id="ledger" class="ledger" data-testid="shields-ledger" role="region" aria-label="Per-resource inclusion proofs" hidden>
     <div class="sec">Inclusion proofs &mdash; verified on this device</div>
@@ -197,8 +197,8 @@
   </div>
 
   <div class="actions">
-    <a class="btn btn-primary" href="chia://settings">Manage DIG settings &amp; cache</a>
-    <a class="btn" href="chia://privacy">Privacy &amp; security settings</a>
+    <a class="btn btn-primary" href="dig://settings">Manage DIG settings &amp; cache</a>
+    <a class="btn" href="dig://privacy">Privacy &amp; security settings</a>
   </div>
 
   <div class="foot">DIG Browser verifies chia:// content against its on-chain root and decrypts it on your device. This panel is a read-only posture readout &mdash; manage the defaults in settings.</div>
@@ -386,12 +386,12 @@
       }
 
       // Read the per-tab/per-capsule ledger the loader accumulated, served as a
-      // JSON blob at chia://shields/ledger?host=<the same host this panel opened
+      // JSON blob at dig://shields/ledger?host=<the same host this panel opened
       // over>. SAME-ORIGIN with this page (a path under the shields host), so the
       // fetch is never CORS-blocked. The verdict is computed in the loader; this
       // page only lists it. On any fetch/parse failure, fail safe to the empty state.
       function loadLedger(h){
-        var url = 'chia://shields/ledger?host=' + encodeURIComponent(h || '');
+        var url = 'dig://shields/ledger?host=' + encodeURIComponent(h || '');
         try {
           fetch(url, { cache: 'no-store' })
             .then(function(r){ return r.ok ? r.json() : null; })

@@ -1,4 +1,4 @@
-// Agent-surface + no-drift guard for the chia://node "My Node" controller page
+// Agent-surface + no-drift guard for the dig://node "My Node" controller page
 // (dig/node/dig_node.html).
 //
 // A full Chromium build is infeasible in CI, so this test does two things on the

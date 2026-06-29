@@ -35,7 +35,7 @@ def _dig_browser_version():
 
     Used to fill the `{{VERSION}}` token in the injected window.chia provider
     (dig/provider/dig_provider.js) so `window.chia.version` reports the real
-    build, matching the runtime-substituted chia://about version (the C++ loader
+    build, matching the runtime-substituted dig://about version (the C++ loader
     fills the about page's {{VERSION}} from version_info at request time; the
     provider JS is compiled into the renderer with no runtime hook, so it must be
     substituted here at build time). Single source of truth: the same
@@ -158,11 +158,11 @@ def _apply_dig_branding(source_tree):
             get_logger().warning('DIG branding: dig_home_html.inc skipped (%s)', exc)
 
     # Generate the embeddable branded surfaces served by the dig:// loader
-    # (dig_url_loader_factory.cc) for chia://about and chia://welcome — the DIG
+    # (dig_url_loader_factory.cc) for dig://about and dig://welcome — the DIG
     # Browser's own "About DIG Browser" page and first-run welcome tour. Each is
     # a single self-contained HTML resource (logo inlined as a data URI, the
     # external Google-fonts @import dropped) compiled into the browser, mirroring
-    # how dig_home_html.inc is generated for chia://home. Single source per page:
+    # how dig_home_html.inc is generated for dig://home. Single source per page:
     # dig/about/dig_about.html and dig/welcome/dig_welcome.html.
     def _gen_embedded_page(src_path, var_name, marker, out_rel):
         """Inline the logo + strip the web-font @import, then emit a C++ .inc."""
@@ -201,19 +201,19 @@ def _apply_dig_branding(source_tree):
         _ROOT_DIR / 'dig' / 'welcome' / 'dig_welcome.html',
         'kDigWelcomeHtml', 'DIGWELCOME',
         'chrome/browser/dig/dig_welcome_html.inc')
-    # chia://shields — the DIG identity panel (Brave-Shields analogue) opened
+    # dig://shields — the DIG identity panel (Brave-Shields analogue) opened
     # from the DIG toolbar button. Served by the dig handler like about/welcome.
     _gen_embedded_page(
         _ROOT_DIR / 'dig' / 'shields' / 'dig_shields.html',
         'kDigShieldsHtml', 'DIGSHIELDS',
         'chrome/browser/dig/dig_shields_html.inc')
-    # chia://node — the "My Node" controller surface (the browser-as-CONTROLLER
+    # dig://node — the "My Node" controller surface (the browser-as-CONTROLLER
     # side of the serve/consume split). When a LOCAL standalone dig-node is
     # present, it drives the node's control.* admin RPCs over loopback. The
     # {{DIG_CONTROL_TOKEN}} placeholder in the page is filled at REQUEST time by
     # the dig loader (it reads <config_dir>/control-token browser-side — a
     # renderer page can't read the filesystem), mirroring how {{VERSION}} is
-    # filled for chia://about; build.py just embeds the page verbatim.
+    # filled for dig://about; build.py just embeds the page verbatim.
     _gen_embedded_page(
         _ROOT_DIR / 'dig' / 'node' / 'dig_node.html',
         'kDigNodeHtml', 'DIGNODE',
@@ -405,11 +405,12 @@ def _stage_dig_runtime(out_dir):
 
     dig_runtime.dll is a cargo-built cdylib (the sibling `digstore` submodule's
     `dig-runtime` crate). The browser loads it at startup (chrome_browser_main's
-    PostBrowserStart) and runs the DIG node — dig:// serving + chain-anchored
-    root resolution — on its own threads INSIDE the browser process, so there is
-    NO dig-node.exe sidecar. We build it from the sibling crate and copy it next
-    to dig.exe. Best-effort: if cargo or the crate is unavailable the browser
-    still builds (dig:// just won't serve until the DLL is present).
+    PostBrowserStart) and runs the DIG node — chia:// content serving +
+    chain-anchored root resolution — on its own threads INSIDE the browser
+    process, so there is NO dig-node.exe sidecar. We build it from the sibling
+    crate and copy it next to dig.exe. Best-effort: if cargo or the crate is
+    unavailable the browser still builds (chia:// just won't serve until the DLL
+    is present).
     """
     digstore = _ROOT_DIR.parent / 'digstore'
     if not (digstore / 'crates' / 'dig-runtime' / 'Cargo.toml').exists():

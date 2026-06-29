@@ -5,11 +5,18 @@ each surface hands off to the rest of the DIG ecosystem. This is the end-to-end
 narrative behind the user-facing files in `dig/` and the UX patches in
 `patches/ungoogled-chromium/windows/`.
 
-> **Canonical vocabulary** (see the superproject `SYSTEM.md` → "Canonical
-> terminology & branding"):
-> - **User-facing content scheme: `chia://`.** The browser registers the scheme
->   whose literal value is `"chia"` (the C++ identifier is `kDigScheme`). Users
->   type/click `chia://…`. The URN namespace `urn:dig:` is unchanged.
+> **Canonical vocabulary** (see the superproject `SYSTEM.md` → "Two user-facing
+> schemes"):
+> - **Two schemes, split by what they address.** The browser registers BOTH:
+>   - **`dig://` = the browser's own internal pages** (its DIG-branded chrome):
+>     `dig://home`, `dig://wallet`, `dig://shields`, `dig://node`,
+>     `dig://settings`, `dig://welcome`, `dig://about` (C++ symbol `kDigScheme`,
+>     literal `"dig"`). These are served directly from the binary by the
+>     in-process loader — local UI, not chain content.
+>   - **`chia://` = DIG Network content** — what you type/click to open a verified
+>     capsule/resource: `chia://[<root>.]<storeId>/<resource>` (C++ symbol
+>     `kChiaScheme`, literal `"chia"`). The URN namespace `urn:dig:` is unchanged.
+>   Mnemonic: DIG-branded chrome = `dig://`; Chia-anchored content = `chia://`.
 > - **DIG Wallet** = the user's Chia wallet, built into DIG Browser.
 > - **store** = the on-chain singleton identity; **capsule** = one immutable
 >   generation of a store, written `storeId:rootHash`.
@@ -17,7 +24,7 @@ narrative behind the user-facing files in `dig/` and the UX patches in
 
 ---
 
-## 1. First run — the welcome tour (`chia://welcome`)
+## 1. First run — the welcome tour (`dig://welcome`)
 
 On first launch DIG Browser opens its own branded welcome tour instead of a bare
 new tab (decided by `GetFirstRunTabsForState` in
@@ -37,18 +44,18 @@ walkthrough in the DIG palette:
    telemetry, DuckDuckGo search by default.
 5. **You're all set** — a "Set as default" prompt (opens
    `chrome://settings/defaultBrowser`) and "Start browsing", both of which land
-   the user on `chia://home`.
+   the user on `dig://home`.
 
-**Hand-off:** Finish / Skip → `chia://home`.
+**Hand-off:** Finish / Skip → `dig://home`.
 
 ---
 
-## 2. Home — the new-tab page (`chia://home`)
+## 2. Home — the new-tab page (`dig://home`)
 
-`dig/newtab/dig_newtab.html` is both the new-tab page and `chia://home` (single
+`dig/newtab/dig_newtab.html` is both the new-tab page and `dig://home` (single
 source; `build.py` generates `dig_home_html.inc` from it). It is the daily hub.
 
-- **Brand logo / wordmark → `chia://home`.** The home affordance lives here
+- **Brand logo / wordmark → `dig://home`.** The home affordance lives here
   because the toolbar's former home button was repurposed as the DIG Wallet
   button (see §5). An explicit **"DIG Network ↗"** footer link goes to the
   marketing site `https://dig.net`.
@@ -64,12 +71,12 @@ source; `build.py` generates `dig_home_html.inc` from it). It is the daily hub.
     - an `http(s)://` URL or dotted host → navigates the web;
     - **anything else → DuckDuckGo web search.** A bare word is *never* treated
       as a DIG address (no name resolution is promised).
-- **Wallet button** in the header opens `chia://wallet`.
+- **Wallet button** in the header opens `dig://wallet`.
 - **"Powered by Chia"** trust line; footer reiterates that every `chia://` page
   is Merkle-verified on its on-chain root and decrypted on-device.
 
 **Hand-offs:** Apps cards → DIGHUb / docs / dapps (web). Omnibox → `chia://…`
-content, a web URL, or DuckDuckGo. Wallet → `chia://wallet`. Publish → DIGHUb.
+content, a web URL, or DuckDuckGo. Wallet → `dig://wallet`. Publish → DIGHUb.
 
 ---
 
@@ -87,7 +94,7 @@ managed in settings — see §6).
 
 ---
 
-## 4. The verified badge — DIG identity panel (`chia://shields`)
+## 4. The verified badge — DIG identity panel (`dig://shields`)
 
 A toolbar shield button (the Brave-Shields analogue,
 `windows-dig-shields.patch`) opens `dig/shields/dig_shields.html` as a small
@@ -108,16 +115,16 @@ per-site control panel:
   telemetry), each shown "On". The copy is framed as a readout of browser-wide
   defaults, not toggles this panel can flip.
 
-**Hand-off:** "Manage DIG settings & cache" → `chia://settings`; "Privacy &
-security settings" → `chia://privacy`.
+**Hand-off:** "Manage DIG settings & cache" → `dig://settings`; "Privacy &
+security settings" → `dig://privacy`.
 
 ---
 
-## 5. The DIG Wallet (`chia://wallet`)
+## 5. The DIG Wallet (`dig://wallet`)
 
 The toolbar's former home button is the **DIG Wallet** button
 (`windows-dig-browser-ux.patch`): a wallet-pouch icon with a Chia leaf knocked
-out of its face. It opens the in-process DIG Wallet (`chia://wallet`) — the
+out of its face. It opens the in-process DIG Wallet (`dig://wallet`) — the
 user's Chia wallet, built into DIG Browser — as a docked side panel.
 
 Click behaviours (surfaced in the button tooltip so they're discoverable, and
@@ -140,9 +147,9 @@ in-process wallet.
 
 ---
 
-## 6. Settings — the DIG section (`chia://settings` → DIG)
+## 6. Settings — the DIG section (`dig://settings` → DIG)
 
-`chrome://settings` (rewritten to `chia://settings`) gains a dedicated **DIG
+`chrome://settings` (which `dig://settings` rewrites to, at `/dig`) gains a dedicated **DIG
 Network** section (`windows-dig-settings-section.patch`) with its own left-nav
 entry. It exposes the native local-cache controls via a Mojo handler
 (`DigCacheHandler`):
@@ -156,9 +163,9 @@ entry. It exposes the native local-cache controls via a Mojo handler
 
 ---
 
-## 7. My Node — run it, and publish from it (`chia://node`)
+## 7. My Node — run it, and publish from it (`dig://node`)
 
-When a local **dig-node** is running, `chia://node` ("My Node",
+When a local **dig-node** is running, `dig://node` ("My Node",
 `dig/node/dig_node.html`) is its controller: status, hosted stores (pin/unpin),
 cache, §21 sync, upstream — over the node's loopback `control.*` RPC, gated by a
 control token the browser injects on this device (see the README "Run & manage
@@ -180,7 +187,7 @@ puts a folder on the DIG Network **from this device**, signed by the in-process
   "Capsule details" / "Advanced". The spend is **broadcast-gated** (pushed only
   when the wallet runs with `DIG_WALLET_ALLOW_BROADCAST=1`) and never hand-rolled
   (built via `digstore-chain`). The Home "+ Publish" button opens this flow
-  (`chia://node?publish=new`).
+  (`dig://node?publish=new`).
 
 **Hand-offs:** Publish → on-chain mint/advance via the in-process wallet + §21
 push to a remote (default `rpc.dig.net` / DIGHUb, or a self-hosted remote).
@@ -192,13 +199,13 @@ Hosted-only features (handles, discovery) are labeled "On DIGHUb ↗" cards.
 
 | Surface | URL | Source | Role |
 |---|---|---|---|
-| Welcome tour | `chia://welcome` | `dig/welcome/dig_welcome.html` | First-run onboarding |
-| Home / new tab | `chia://home` | `dig/newtab/dig_newtab.html` | Daily hub: Apps + Search + Wallet |
-| About | `chia://about` | `dig/about/dig_about.html` | What DIG Browser is + version |
-| DIG identity panel | `chia://shields` | `dig/shields/dig_shields.html` | Verification + privacy posture readout (capsule) |
-| DIG Wallet | `chia://wallet` | in-process DIG runtime | The built-in Chia wallet |
-| My Node + Publish | `chia://node` | `dig/node/dig_node.html` | Run/manage the local node + local launch & deploy |
-| Settings → DIG | `chia://settings` (→ `/dig`) | `windows-dig-settings-section.patch` | Local-cache controls |
+| Welcome tour | `dig://welcome` | `dig/welcome/dig_welcome.html` | First-run onboarding |
+| Home / new tab | `dig://home` | `dig/newtab/dig_newtab.html` | Daily hub: Apps + Search + Wallet |
+| About | `dig://about` | `dig/about/dig_about.html` | What DIG Browser is + version |
+| DIG identity panel | `dig://shields` | `dig/shields/dig_shields.html` | Verification + privacy posture readout (capsule) |
+| DIG Wallet | `dig://wallet` | in-process DIG runtime | The built-in Chia wallet |
+| My Node + Publish | `dig://node` | `dig/node/dig_node.html` | Run/manage the local node + local launch & deploy |
+| Settings → DIG | `dig://settings` (→ `/dig`) | `windows-dig-settings-section.patch` | Local-cache controls |
 | Injected provider | `window.chia` | `dig/provider/dig_provider.js` | CHIP-0002 wallet bridge for pages |
 
 ## Ecosystem hand-offs
@@ -206,12 +213,12 @@ Hosted-only features (handles, discovery) are labeled "On DIGHUb ↗" cards.
 - **DIGHUb** (`hub.dig.net`) — publish/manage stores; the DIG Wallet is the
   account. Reached from the home Apps card and the My Node "On DIGHUb ↗" cards.
   The home "+ Publish" button now opens the **local** publish flow
-  (`chia://node` → Publish) — launch/deploy on this device — with DIGHUb offered
+  (`dig://node` → Publish) — launch/deploy on this device — with DIGHUb offered
   as an alternate path. (Hosted-only features — handles, discovery, the price
   peg `/v1/pricing` — still come from DIGHUb.)
 - **docs.dig.net** — protocol / CLI / build docs. Reached from Apps + footer.
 - **dig.net** — marketing site. Reached from the explicit "DIG Network ↗"
-  footer link (the brand logo goes to `chia://home`, not the marketing site).
+  footer link (the brand logo goes to `dig://home`, not the marketing site).
 - **TibetSwap / dexie / 9mm** — acquire **$DIG** to publish. TibetSwap is
   surfaced on the home Apps directory + footer.
 - **rpc.dig.net** — the read path the native `chia://` handler fetches from

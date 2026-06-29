@@ -415,7 +415,7 @@
     My Node controls your <b>local dig-node</b> over loopback only
     (<span class="mono">control.*</span> RPC, gated by a token that never leaves
     this device). Read more in <a href="https://docs.dig.net">the docs ↗</a>.
-    <br>Agent surface: <span class="mono">chia://node?describe=1</span> emits the
+    <br>Agent surface: <span class="mono">dig://node?describe=1</span> emits the
     node's <span class="mono">/openrpc.json</span> control contract as JSON.
   </div>
  </div>
@@ -711,7 +711,7 @@
     var docEl = document.documentElement;
 
     // The control token is filled browser-side when the loader serves
-    // chia://node (it reads <config_dir>/control-token, the only place a token
+    // dig://node (it reads <config_dir>/control-token, the only place a token
     // exists; a renderer page can't read the filesystem). The {{...}} token is
     // left as the literal placeholder if the file is absent → "needs-token".
     var TOKEN_PLACEHOLDER = '{{DIG_CONTROL_TOKEN}}';
@@ -1261,7 +1261,7 @@
     $('pubCancel').addEventListener('click', function(){ showPubStep('setup'); docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.IDLE); });
     $('pubAnother').addEventListener('click', resetPublish);
 
-    // If the URL asks to start a flow (chia://node?publish=new|update), open it.
+    // If the URL asks to start a flow (dig://node?publish=new|update), open it.
     (function(){
       var q = new URLSearchParams(location.search || '');
       var p = q.get('publish');
@@ -1269,7 +1269,7 @@
       docEl.setAttribute('data-dig-deploy', DEPLOY_STATE.IDLE);
     })();
 
-    // Agent surface: chia://node?describe=1 emits the node's OpenRPC control
+    // Agent surface: dig://node?describe=1 emits the node's OpenRPC control
     // contract as JSON (the page becomes a machine entry point). Falls back to a
     // small descriptor when no node answers, so an agent always gets structure.
     function maybeDescribe(){
@@ -1279,7 +1279,7 @@
         // Replace the page with a single <pre> of the OpenRPC/descriptor JSON.
         // Use DOM APIs (not innerHTML with a literal body tag) so the document
         // keeps exactly one body element.
-        document.title = 'chia://node describe';
+        document.title = 'dig://node describe';
         var pre = document.createElement('pre');
         pre.setAttribute('data-testid', 'node-describe');
         pre.textContent = JSON.stringify(obj, null, 2);
@@ -1287,7 +1287,7 @@
       }
       var i = 0;
       (function tryNext(){
-        if (i >= CONTROL_BASES.length) { emit({surface:'chia://node', node:false, control_methods:CONTROL_METHODS, error_codes:CONTROL_ERR}); return; }
+        if (i >= CONTROL_BASES.length) { emit({surface:'dig://node', node:false, control_methods:CONTROL_METHODS, error_codes:CONTROL_ERR}); return; }
         var b = CONTROL_BASES[i++];
         fetch(b + OPENRPC_PATH, {method:'GET', credentials:'omit', cache:'no-store'})
           .then(function(r){ return r.ok ? r.json() : null; })

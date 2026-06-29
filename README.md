@@ -8,11 +8,20 @@ its on-chain Merkle root, and decrypts it on your device** — the same client-s
 verify/decrypt contract used by the DIG Chrome extension, the DIG Hub, and the
 `digstore` CLI (see the ecosystem `SYSTEM.md`).
 
-> **Scheme note.** The user-facing scheme — what you type or click — is
-> **`chia://`** (the canonical DIG Network content scheme, per `SYSTEM.md`). The
-> `urn:dig:` URN namespace and the digstore **§21 remote-transport locator**
-> `dig://<host>/<store_id>` (a developer/wire contract) are unchanged and are
-> NOT the same thing as the user-facing scheme.
+> **Scheme note (two schemes, split by what they address — per `SYSTEM.md`).**
+> - **`chia://` = DIG Network content** — what you type/click to open a verified
+>   capsule/resource (`chia://[<root>.]<storeID>/<resource>`). This is the scheme
+>   the rest of this section is about.
+> - **`dig://` = the browser's own internal pages** — its DIG-branded chrome:
+>   `dig://home`, `dig://wallet`, `dig://shields`, `dig://node`, `dig://settings`,
+>   `dig://welcome`, `dig://about`. Served directly from the binary (local UI, not
+>   chain content).
+>
+> Distinct, unchanged concepts that also use these words: the `urn:dig:` URN
+> namespace, and the digstore **§21 remote-transport locator**
+> `dig://<host>/<store_id>` (a developer/wire contract) — NOT the same as the
+> browser's internal `dig://` scheme. Mnemonic: DIG-branded chrome = `dig://`;
+> Chia-anchored content = `chia://`.
 
 It is ungoogled-chromium underneath (no Google services, no telemetry), rebranded
 as a DIG Network product and themed in the DIG brand purple (`#5800D6`).
@@ -90,10 +99,10 @@ local dig-node *is* present it consumes from it and they share one `.dig` cache.
   [`dig/node/dig_source_resolution.mjs`](dig/node/dig_source_resolution.mjs)
   with a Node test harness; the native loader mirrors it in C++.
 
-### Run & manage your node — `chia://node` (My Node)
+### Run & manage your node — `dig://node` (My Node)
 
 The DIG Browser is also your node's **controller**. When a local standalone
-**dig-node** is running, open **`chia://node`** ("My Node") to manage it: see its
+**dig-node** is running, open **`dig://node`** ("My Node") to manage it: see its
 status, the **stores it hosts** (pin / unpin), the **cache** (view / clear / set
 cap), **§21 sync** status, and the **upstream** it fetches from. It drives the
 node's `control.*` admin RPCs over loopback only.
@@ -112,7 +121,7 @@ node's `control.*` admin RPCs over loopback only.
   `X-Dig-Control-Token` header. The browser reads the token on this device and
   injects it into the page (a renderer page can't read the filesystem); it is
   sent only to your local node and never leaves the machine.
-- **Self-describing.** `chia://node?describe=1` emits the node's
+- **Self-describing.** `dig://node?describe=1` emits the node's
   `GET /openrpc.json` control contract as JSON (an agent entry point). The control
   policy (method names, the auth scheme, the catalogued error codes
   `-32020`/`-32021`/`-32022`) lives in
@@ -120,7 +129,7 @@ node's `control.*` admin RPCs over loopback only.
   Node test harness; the page restates it and `dig/node/dig_node.test.mjs` guards
   the two against drift and against the dig-node contract.
 
-### Publish from the browser — local launch & deploy (`chia://node` → Publish)
+### Publish from the browser — local launch & deploy (`dig://node` → Publish)
 
 My Node has a **Publish** panel — the browser-as-local-hub centrepiece. It puts a
 folder of files on the DIG Network **from this device**, signed by the in-process
@@ -171,7 +180,7 @@ content reflows beside it) and stays attached to the window; it cannot be dragge
 off. Click the button again to close it (the panel toggles), exactly like every
 other side-panel toolbar entry.
 
-| Click | Wallet button (`chia://wallet`) | Identity button (`chia://shields`) |
+| Click | Wallet button (`dig://wallet`) | Identity button (`dig://shields`) |
 |-------|----------------------------------|-------------------------------------|
 | plain click | dock in the Side Panel (right edge by default); toggle closed | same |
 | **Alt**+click | flip which edge the Side Panel docks to (left ↔ right; persists per profile) | same (shared pref) |
@@ -195,10 +204,10 @@ panels and Chromium's own entries alike. The plumbing lives in
 `BrowserWindowInterface::GetFeatures().side_panel_ui()->Toggle(...)` in
 `windows-dig-browser-ux.patch` (wallet) and `windows-dig-shields.patch` (identity).
 
-### DIG identity panel — `chia://shields` (the per-resource proof ledger)
+### DIG identity panel — `dig://shields` (the per-resource proof ledger)
 
 The signature DIG-identity toolbar button (next to the wallet button) opens the
-**DIG identity panel** — `chia://shields`, the Brave-Shields analogue. Besides the
+**DIG identity panel** — `dig://shields`, the Brave-Shields analogue. Besides the
 aggregate verified badge, served-locally state, the capsule (`storeId:rootHash`)
 disclosure, and the privacy posture, it lists the **per-resource inclusion-proof
 LEDGER** for the page's capsule:
@@ -215,7 +224,7 @@ LEDGER** for the page's capsule:
   states are each handled.
 - **How it's wired.** The loader keeps a process-global, per-capsule accumulator
   (`RecordLedgerEntry` in `dig_url_loader_factory.cc`) and serves it back to the
-  panel as a same-origin JSON blob at **`chia://shields/ledger?host=…`** (a path
+  panel as a same-origin JSON blob at **`dig://shields/ledger?host=…`** (a path
   under the `shields` host, so the panel's `fetch().json()` is never CORS-blocked).
   The pure model — the capsule key, the entry shape, the pass/fail grouping —
   lives in [`dig/shields/dig_ledger.mjs`](dig/shields/dig_ledger.mjs) with a Node
@@ -242,7 +251,7 @@ out-of-band knowledge:
     [`dig/provider/dig_provider.d.ts`](dig/provider/dig_provider.js).
   It is byte-aligned with the `dig-chrome-extension`'s `window.chia` so a dapp
   sees the same surface on either.
-- **Version** — `chia://about` shows the running build (the `{{VERSION}}` token is
+- **Version** — `dig://about` shows the running build (the `{{VERSION}}` token is
   filled at request time from `version_info`; the same value is substituted into
   the provider's `window.chia.version` at build time).
 - **`chia://` loader error taxonomy** — a failed load serves the branded error
@@ -253,13 +262,13 @@ out-of-band knowledge:
   `DIG_ERR_PROOF_MISMATCH` (tamper / wrong root), `DIG_ERR_DECRYPT_TAG` (wrong
   key/salt / corrupt), `DIG_ERR_NOT_FOUND` (blind miss / decoy / invalid URN),
   `DIG_ERR_NETWORK` (node/CDN unreachable or transport failure).
-- **Driveable UI** — the built-in `dig/*` surfaces (`chia://home`, `about`,
+- **Driveable UI** — the built-in `dig/*` surfaces (`dig://home`, `about`,
   `welcome`, `shields`, `node`) carry stable `data-testid` hooks and ARIA
-  landmarks; `chia://shields` exposes the active page's verification verdict as
+  landmarks; `dig://shields` exposes the active page's verification verdict as
   document `data-dig-scheme` / `data-dig-verified` / `data-dig-source` /
   `data-dig-capsule` attributes plus the per-resource proof tally as
   `data-dig-ledger-passed` / `data-dig-ledger-failed` (the ledger feed itself is
-  `chia://shields/ledger?host=…`), `chia://node` exposes its controller posture as
+  `dig://shields/ledger?host=…`), `dig://node` exposes its controller posture as
   `data-dig-node` (`no-node` / `needs-token` / `ready`), and the My Node Publish
   panel exposes the deploy posture as `data-dig-deploy`
   (`idle`…`done`/`error`) plus `data-dig-deploy-error` (a stable `DIG_ERR_*` code).

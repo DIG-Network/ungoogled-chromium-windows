@@ -2,7 +2,7 @@
 // (dig/node/dig_deploy_flow.mjs).
 //
 // A full Chromium build is infeasible in CI, so the PURE deploy-flow policy the
-// chia://node "Publish / Deploy" panel drives — the state machine, the dig.stage
+// dig://node "Publish / Deploy" panel drives — the state machine, the dig.stage
 // request/result, the dynamic USD-pegged cost preview + formatting, the wallet
 // mint/advance request/result, the catalogued error-code mapping, and the final
 // result assembly — lives in one JS module this harness exercises directly. The

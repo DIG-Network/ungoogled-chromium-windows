@@ -3,7 +3,7 @@
 // CONTROLLER UI").
 //
 // When a LOCAL standalone dig-node is present, the browser's "My Node" surface
-// (chia://node) drives the node's control.* admin RPCs — status, hosted stores
+// (dig://node) drives the node's control.* admin RPCs — status, hosted stores
 // (list/pin/unpin), cache (view/clear/setCap), §21 sync (status/trigger), and
 // config (get/upstream). These control methods live BESIDE the node's read RPC,
 // are loopback-only, and are gated by a local control token:
