@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0c0718">
+<title>My Node &mdash; DIG Browser</title>
+<style>
+  /* Space Grotesk for the brand/display (falls back cleanly if the CDN is stripped at build). */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  :root{
+    --violet:#5800D6; --magenta:#FF00DE;
+    --grad:linear-gradient(100deg,#7835EB 0%,#FF00DE 100%);
+    --ink:#ECE6F7; --muted:#B9AFD6; --faint:#7C6FA6;
+    --bg:#0c0718; --card:#140c26; --line:#241a3d; --line-2:#322455;
+    --ok:#34d27e; --warn:#f0a93b; --bad:#f06b6b;
+    --font-display:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+    --font-body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --r:14px; --r-lg:20px; --pill:999px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font-body);color:var(--ink);
+       background:radial-gradient(1100px 700px at 50% -20%,#1b0b35 0%,#0c0718 62%,#08040f 100%);
+       min-height:100%}
+  .wrap{max-width:860px;margin:0 auto;padding:30px 22px 64px}
+  /* header */
+  .hdr{display:flex;align-items:center;gap:13px;margin:0 2px 22px}
+  .mark{width:42px;height:42px;border-radius:12px;flex:none;display:flex;align-items:center;
+        justify-content:center;font-family:var(--font-display);font-weight:800;font-size:23px;color:#fff;
+        background:var(--grad);box-shadow:0 8px 26px rgba(120,53,235,.42)}
+  .hdr .t{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;line-height:1}
+  .hdr .s{font-size:13px;color:var(--faint);margin-top:5px}
+  .grow{flex:1;min-width:0}
+  /* node pill */
+  .nodepill{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-display);
+        font-weight:600;font-size:12.5px;border-radius:var(--pill);padding:7px 13px;flex:none}
+  .nodepill.on{background:rgba(52,210,126,.13);color:var(--ok);border:1px solid rgba(52,210,126,.3)}
+  .nodepill.off{background:rgba(124,111,166,.12);color:var(--muted);border:1px solid var(--line-2)}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.muted{background:var(--faint)} .dot.warn{background:var(--warn)}
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+        padding:18px 18px 16px;margin-bottom:16px}
+  .card h2{font-family:var(--font-display);font-weight:700;font-size:15.5px;margin:0 0 3px}
+  .card .cd{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 14px}
+  /* empty / no-node state */
+  .empty{text-align:center;padding:30px 20px}
+  .empty .big{font-family:var(--font-display);font-weight:700;font-size:18px;margin:14px 0 7px}
+  .empty p{font-size:13px;color:var(--muted);line-height:1.6;max-width:520px;margin:0 auto 6px}
+  /* stat grid */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px}
+  .stat{background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:var(--r);padding:12px 13px}
+  .stat .k{font-family:var(--font-display);font-weight:600;font-size:10.5px;letter-spacing:.04em;
+        text-transform:uppercase;color:var(--faint)}
+  .stat .v{font-family:var(--font-display);font-weight:700;font-size:18px;margin-top:5px;word-break:break-word}
+  .stat .v small{font-weight:500;font-size:12px;color:var(--muted)}
+  /* rows (hosted stores) */
+  .list{display:grid;gap:9px;margin-top:4px}
+  .row{display:flex;align-items:center;gap:12px;background:rgba(0,0,0,.18);border:1px solid var(--line);
+       border-radius:var(--r);padding:11px 13px}
+  .row .nm{font-family:var(--mono);font-size:12px;color:var(--ink);word-break:break-all;line-height:1.5}
+  .row .meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .badge{font-family:var(--font-display);font-weight:600;font-size:10.5px;border-radius:var(--pill);
+         padding:3px 9px;flex:none;border:1px solid var(--line-2);color:var(--muted)}
+  .badge.pin{background:rgba(52,210,126,.13);color:var(--ok);border-color:rgba(52,210,126,.3)}
+  /* controls */
+  .ctl{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+       font-family:var(--font-display);font-weight:600;font-size:12.5px;border-radius:var(--pill);
+       padding:9px 15px;border:1px solid var(--line-2);background:var(--card);color:var(--ink);
+       text-decoration:none;transition:border-color .15s,filter .15s,transform .08s}
+  .btn:hover{border-color:var(--violet)} .btn:active{transform:translateY(1px)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn-sm{font-size:11.5px;padding:6px 11px}
+  .btn-primary{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 8px 24px rgba(120,53,235,.3)}
+  .btn-primary:hover{filter:brightness(1.07)}
+  .btn-danger{color:var(--bad);border-color:rgba(240,107,107,.35)}
+  input.in{font-family:var(--mono);font-size:12px;color:var(--ink);background:rgba(0,0,0,.28);
+       border:1px solid var(--line-2);border-radius:10px;padding:9px 11px;min-width:0;flex:1}
+  input.in:focus{outline:none;border-color:var(--violet)}
+  /* notices */
+  .note{font-size:12px;line-height:1.5;border-radius:10px;padding:10px 12px;margin-top:10px}
+  .note.warn{background:rgba(240,169,59,.1);border:1px solid rgba(240,169,59,.3);color:#f3c277}
+  .note.bad{background:rgba(240,107,107,.1);border:1px solid rgba(240,107,107,.3);color:#f3a0a0}
+  .note.ok{background:rgba(52,210,126,.1);border:1px solid rgba(52,210,126,.3);color:#8fe6b6}
+  .note.muted{background:rgba(0,0,0,.2);border:1px solid var(--line);color:var(--muted)}
+  /* disclosure */
+  .disc{margin-top:12px}
+  .disc-t{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-family:var(--font-display);
+        font-weight:600;font-size:11.5px;color:var(--faint);background:none;border:none;padding:0}
+  .disc-t .caret{font-size:9px;transition:transform .15s}
+  .disc-t[aria-expanded="true"] .caret{transform:rotate(90deg)}
+  .disc-b{margin-top:9px}
+  pre{font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(0,0,0,.28);
+      border:1px solid var(--line);border-radius:10px;padding:11px;overflow:auto;max-height:280px;margin:0}
+  .hosted-card{margin-top:8px}
+  /* "On DIGHub" outbound cards — hosted features the local node does NOT do */
+  .hub-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:4px}
+  .hub-card{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.18);border:1px solid var(--line);
+       border-radius:var(--r);padding:12px 13px;text-decoration:none;color:var(--ink)}
+  .hub-card:hover{border-color:var(--violet)}
+  .hub-card .ic{width:30px;height:30px;border-radius:8px;flex:none;display:flex;align-items:center;
+       justify-content:center;font-size:15px;background:rgba(120,53,235,.16);border:1px solid var(--line-2)}
+  .hub-card .nm2{font-family:var(--font-display);font-weight:600;font-size:13px}
+  .hub-card .ds2{font-size:11px;color:var(--muted);margin-top:1px}
+  .hub-card .ext{margin-left:auto;color:var(--faint);font-size:13px}
+  .foot{text-align:center;font-size:11.5px;color:var(--faint);margin-top:22px;line-height:1.6}
+  .foot a{color:var(--muted)}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+ <div class="wrap">
+  <header class="hdr">
+    <div class="mark">D</div>
+    <div class="grow">
+      <div class="t">My Node</div>
+      <div class="s">Run &amp; manage your DIG node from the browser</div>
+    </div>
+    <span id="nodePill" class="nodepill off" data-testid="node-status-pill" role="status" aria-live="polite">
+      <span class="dot muted"></span><span id="nodePillText">Checking&hellip;</span>
+    </span>
+  </header>
+
+  <!-- NO LOCAL NODE: the consumer never needs one — explain + point to install -->
+  <section id="noNode" class="card hidden" data-testid="node-empty" aria-label="No local node">
+    <div class="empty">
+      <div class="dot muted" style="width:14px;height:14px;margin:0 auto"></div>
+      <div class="big">No local DIG node detected</div>
+      <p>The DIG Browser works fully on its own &mdash; it verifies and decrypts
+         <b>chia://</b> content on your device with no node required. A local
+         <b>dig-node</b> is optional: run one to serve content, contribute to the
+         network, and host your own stores. When it is running, manage it here.</p>
+      <p class="note muted" style="display:inline-block;margin-top:14px;text-align:left">
+         Looked for a node at <span class="mono">http://dig.local</span> and
+         <span class="mono">http://localhost:8080</span>.</p>
+      <div class="ctl" style="justify-content:center;margin-top:16px">
+        <a class="btn btn-primary" href="https://dig.net/node" data-testid="node-install-link">Get the dig-node ↗</a>
+        <button class="btn" id="recheckBtn" type="button" data-testid="node-recheck">Check again</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- NODE PRESENT, TOKEN MISSING: explain the loopback control token gate -->
+  <section id="needsToken" class="card hidden" data-testid="node-needs-token" aria-label="Control token required">
+    <h2>A local node is running &mdash; unlock controls</h2>
+    <p class="cd">Managing the node needs its <b>local control token</b> &mdash; a
+       secret the node writes on this machine so only you can administer it. The
+       browser couldn't read it automatically.</p>
+    <div class="note warn">Find the token in your node's config folder
+       (<span class="mono">control-token</span>), then paste it below. It stays on
+       this device and is sent only to your local node.</div>
+    <div class="ctl" style="margin-top:12px">
+      <input class="in" id="tokenInput" type="password" autocomplete="off" spellcheck="false"
+             placeholder="paste control-token" data-testid="node-token-input"
+             aria-label="Control token">
+      <button class="btn btn-primary" id="tokenApply" type="button" data-testid="node-token-apply">Unlock</button>
+    </div>
+  </section>
+
+  <!-- READY: the live controller surface -->
+  <div id="ready" class="hidden" data-testid="node-ready">
+    <!-- Status -->
+    <section class="card" aria-label="Node status">
+      <h2>Status</h2>
+      <p class="cd">Your node's health, what it's hosting, and where it syncs from.</p>
+      <div class="stats" id="statusStats" data-testid="node-stats"></div>
+      <div class="disc">
+        <button class="disc-t" id="statusRawT" type="button" aria-expanded="false" aria-controls="statusRawB" data-testid="node-status-raw-toggle">
+          <span class="caret" aria-hidden="true">&#9656;</span>Raw control.status
+        </button>
+        <div class="disc-b hidden" id="statusRawB"><pre id="statusRaw" data-testid="node-status-raw"></pre></div>
+      </div>
+    </section>
+
+    <!-- Hosted stores -->
+    <section class="card" aria-label="Hosted stores">
+      <h2>Hosted stores</h2>
+      <p class="cd">Stores this node holds. <b>Pin</b> a store to keep it cached and
+         served; unpin to let it be evicted. A <b>capsule</b> is one generation
+         (<span class="mono">storeId:rootHash</span>).</p>
+      <div class="ctl" style="margin-bottom:10px">
+        <input class="in" id="pinInput" type="text" autocomplete="off" spellcheck="false"
+               placeholder="storeId or storeId:rootHash to pin" data-testid="node-pin-input"
+               aria-label="Store to pin">
+        <button class="btn btn-primary btn-sm" id="pinBtn" type="button" data-testid="node-pin">Pin</button>
+        <button class="btn btn-sm" id="storesRefresh" type="button" data-testid="node-stores-refresh">Refresh</button>
+      </div>
+      <div class="list" id="storesList" data-testid="node-stores-list"></div>
+      <div id="storesEmpty" class="note muted hidden">No stores hosted yet. Pin one above to start hosting it.</div>
+    </section>
+
+    <!-- Cache -->
+    <section class="card" aria-label="Local cache">
+      <h2>Cache</h2>
+      <p class="cd">The on-disk store cache this node keeps (shared with the browser's
+         in-process node when both run).</p>
+      <div class="stats" id="cacheStats" data-testid="node-cache-stats"></div>
+      <div class="ctl" style="margin-top:12px">
+        <input class="in" id="capInput" type="number" min="64" step="64"
+               placeholder="cap (MiB)" data-testid="node-cap-input" aria-label="Cache cap in MiB"
+               style="max-width:170px;flex:none">
+        <button class="btn btn-sm" id="capApply" type="button" data-testid="node-cap-apply">Set cap</button>
+        <button class="btn btn-sm btn-danger" id="cacheClear" type="button" data-testid="node-cache-clear">Clear cache</button>
+      </div>
+    </section>
+
+    <!-- Sync + config -->
+    <section class="card" aria-label="Sync and configuration">
+      <h2>Sync &amp; upstream</h2>
+      <p class="cd">§21 whole-store sync status, and the upstream the node blind-fetches
+         from on a cache miss.</p>
+      <div class="stats" id="syncStats" data-testid="node-sync-stats"></div>
+      <div class="ctl" style="margin-top:12px">
+        <input class="in" id="upstreamInput" type="text" autocomplete="off" spellcheck="false"
+               placeholder="upstream URL (e.g. https://rpc.dig.net)" data-testid="node-upstream-input"
+               aria-label="Upstream URL">
+        <button class="btn btn-sm" id="upstreamApply" type="button" data-testid="node-upstream-apply">Set upstream</button>
+      </div>
+      <div id="opNote" class="note muted hidden" data-testid="node-op-note" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- Hosted-only features (NOT done locally — labeled outbound cards) -->
+    <section class="card" aria-label="On DIGHub">
+      <h2>On DIGHub</h2>
+      <p class="cd">Some features are network services DIGHUb runs &mdash; your local
+         node doesn't fake them. Manage them on the hub.</p>
+      <div class="hub-strip">
+        <a class="hub-card" href="https://hub.dig.net" data-testid="node-hub-handles">
+          <span class="ic">@</span>
+          <span class="grow"><span class="nm2">Handles &amp; domains</span><span class="ds2">@names · *.on.dig.net · custom TLS</span></span>
+          <span class="ext">↗</span>
+        </a>
+        <a class="hub-card" href="https://hub.dig.net" data-testid="node-hub-discover">
+          <span class="ic">&#128269;</span>
+          <span class="grow"><span class="nm2">Discover &amp; search</span><span class="ds2">Explore directory · FTS · ranking</span></span>
+          <span class="ext">↗</span>
+        </a>
+      </div>
+    </section>
+  </div>
+
+  <div class="foot">
+    My Node controls your <b>local dig-node</b> over loopback only
+    (<span class="mono">control.*</span> RPC, gated by a token that never leaves
+    this device). Read more in <a href="https://docs.dig.net">the docs ↗</a>.
+    <br>Agent surface: <span class="mono">chia://node?describe=1</span> emits the
+    node's <span class="mono">/openrpc.json</span> control contract as JSON.
+  </div>
+ </div>
+
+ <script>
+  (function(){
+    'use strict';
+
+    // ---- PURE controller policy (single source of truth in -----------------
+    // dig/node/dig_node_controller.mjs; restated here so this page stays a
+    // self-contained embeddable resource. dig_node.test.mjs extracts these by
+    // name and asserts they match the module + the dig-node contract — they
+    // CANNOT drift. Any change here must mirror BOTH. -----------------------
+
+    // The local dig-node control endpoints, dig.local FIRST then localhost:8080.
+    var CONTROL_BASES = ['http://dig.local', 'http://localhost:8080'];
+    var HEALTH_PATH = '/health';
+    var OPENRPC_PATH = '/openrpc.json';
+    var RPC_PATH = '/';
+    // local-token auth (dig-node control.rs / meta.rs x-control-auth).
+    var CONTROL_TOKEN_HEADER = 'X-Dig-Control-Token';
+    var CONTROL_TOKEN_PARAM = '_control_token';
+    // catalogued control-plane error codes (dig-node meta.rs).
+    var CONTROL_ERR = {UNAUTHORIZED:-32020, NOT_SUPPORTED:-32021, CONTROL_ERROR:-32022};
+    // canonical control.* method names (dig-node meta.rs:157-237).
+    var CONTROL_METHODS = {
+      status:'control.status',
+      configGet:'control.config.get', configSetUpstream:'control.config.setUpstream',
+      cacheGet:'control.cache.get', cacheSetCap:'control.cache.setCap', cacheClear:'control.cache.clear',
+      hostedStoresList:'control.hostedStores.list', hostedStoresPin:'control.hostedStores.pin',
+      hostedStoresUnpin:'control.hostedStores.unpin', hostedStoresStatus:'control.hostedStores.status',
+      syncStatus:'control.sync.status', syncTrigger:'control.sync.trigger'
+    };
+    var _rpcId = 0;
+
+    // Build an authorized JSON-RPC control.* request (token in params).
+    function buildControlRequest(method, params, token){
+      if (typeof method !== 'string' || method.indexOf('control.') !== 0) {
+        throw new TypeError('not a control.* method: ' + String(method));
+      }
+      var merged = {};
+      params = params || {};
+      for (var k in params) { if (Object.prototype.hasOwnProperty.call(params,k)) merged[k]=params[k]; }
+      if (token) merged[CONTROL_TOKEN_PARAM] = token;
+      return {jsonrpc:'2.0', id:(++_rpcId), method:method, params:merged};
+    }
+
+    // Headers for a control.* POST (token in the preferred header when present).
+    function controlHeaders(token){
+      var h = {'Content-Type':'application/json'};
+      if (token) h[CONTROL_TOKEN_HEADER] = token;
+      return h;
+    }
+
+    // /health body is a live LOCAL dig-node iff status:ok AND mode:local-node.
+    function isLocalDigNode(body){
+      var v = body;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) { return false; } }
+      if (!v || typeof v !== 'object') return false;
+      return v.status === 'ok' && v.mode === 'local-node';
+    }
+
+    // Classify a control.* response into a stable kind for precise UI reactions.
+    function classifyControlResponse(response){
+      var v = response;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) { return {kind:'error', message:'Malformed response from the node.'}; } }
+      if (!v || typeof v !== 'object') return {kind:'error', message:'Empty response from the node.'};
+      if (v.error && typeof v.error === 'object') {
+        var code = v.error.code;
+        var message = v.error.message || 'Control operation failed.';
+        var dataCode = v.error.data && v.error.data.code;
+        var kind = 'error';
+        if (code === CONTROL_ERR.UNAUTHORIZED) kind = 'unauthorized';
+        else if (code === CONTROL_ERR.NOT_SUPPORTED) kind = 'not-supported';
+        else if (code === CONTROL_ERR.CONTROL_ERROR) kind = 'control-error';
+        return {kind:kind, code:code, message:message, dataCode:dataCode};
+      }
+      return {kind:'ok', result:v.result};
+    }
+
+    // Decide the surface posture: hidden with no node, needs-token, or ready.
+    function nodeSurfaceState(args){
+      var nodeDetected = !!(args && args.nodeDetected);
+      var hasToken = !!(args && args.hasToken);
+      if (!nodeDetected) return {state:'no-node', canControl:false};
+      if (!hasToken) return {state:'needs-token', canControl:false};
+      return {state:'ready', canControl:true};
+    }
+
+    // ---- DOM glue (impure) -------------------------------------------------
+
+    var $ = function(id){ return document.getElementById(id); };
+    var docEl = document.documentElement;
+
+    // The control token is filled browser-side when the loader serves
+    // chia://node (it reads <config_dir>/control-token, the only place a token
+    // exists; a renderer page can't read the filesystem). The {{...}} token is
+    // left as the literal placeholder if the file is absent → "needs-token".
+    var TOKEN_PLACEHOLDER = '{{DIG_CONTROL_TOKEN}}';
+    var injected = TOKEN_PLACEHOLDER;
+    var token = (injected && injected !== TOKEN_PLACEHOLDER) ? injected : null;
+    var baseUrl = null;   // the reachable control base, learned at detect time.
+
+    function setPosture(state){
+      docEl.setAttribute('data-dig-node', state);  // agent-readable posture
+      $('noNode').classList.toggle('hidden', state !== 'no-node');
+      $('needsToken').classList.toggle('hidden', state !== 'needs-token');
+      $('ready').classList.toggle('hidden', state !== 'ready');
+      var pill = $('nodePill'), txt = $('nodePillText'), dot = pill.querySelector('.dot');
+      if (state === 'ready') { pill.className='nodepill on'; dot.className='dot ok'; txt.textContent='Local node connected'; }
+      else if (state === 'needs-token') { pill.className='nodepill off'; dot.className='dot warn'; txt.textContent='Needs control token'; }
+      else { pill.className='nodepill off'; dot.className='dot muted'; txt.textContent='No local node'; }
+    }
+
+    // Probe /health across the candidate bases (dig.local then localhost) to
+    // detect a local node and remember which base answered.
+    function detectNode(){
+      var i = 0;
+      function tryNext(){
+        if (i >= CONTROL_BASES.length) { baseUrl = null; render(false); return; }
+        var b = CONTROL_BASES[i++];
+        fetch(b + HEALTH_PATH, {method:'GET', credentials:'omit', cache:'no-store'})
+          .then(function(r){ return r.ok ? r.text() : ''; })
+          .then(function(t){ if (isLocalDigNode(t)) { baseUrl = b; render(true); } else { tryNext(); } })
+          .catch(function(){ tryNext(); });
+      }
+      tryNext();
+    }
+
+    function render(detected){
+      var s = nodeSurfaceState({nodeDetected:detected, hasToken:!!token});
+      setPosture(s.state);
+      if (s.state === 'ready') loadAll();
+    }
+
+    // POST a control.* request to the detected base; returns a classified result.
+    function call(method, params){
+      var req = buildControlRequest(method, params, token);
+      return fetch(baseUrl + RPC_PATH, {
+        method:'POST', credentials:'omit', cache:'no-store',
+        headers:controlHeaders(token), body:JSON.stringify(req)
+      }).then(function(r){ return r.text(); })
+        .then(function(t){ return classifyControlResponse(t); })
+        .catch(function(){ return {kind:'error', message:'Could not reach the node.'}; });
+    }
+
+    function note(kind, msg){
+      var n = $('opNote');
+      n.className = 'note ' + kind; n.textContent = msg; n.classList.remove('hidden');
+    }
+    // A control failure that means the token is bad → drop to needs-token.
+    function handleAuth(c){ if (c.kind === 'unauthorized') { token = null; setPosture('needs-token'); return true; } return false; }
+
+    function statCard(k, v, sub){
+      return '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+
+             (sub?(' <small>'+sub+'</small>'):'')+'</div></div>';
+    }
+    function fmtBytes(n){
+      n = Number(n)||0; if (n < 1024) return n+' B';
+      var u=['KiB','MiB','GiB','TiB'], i=-1; do { n/=1024; i++; } while (n>=1024 && i<u.length-1);
+      return n.toFixed(n<10?1:0)+' '+u[i];
+    }
+    function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+
+    function loadAll(){ loadStatus(); loadStores(); loadCache(); loadSync(); loadConfig(); }
+
+    function loadStatus(){
+      call(CONTROL_METHODS.status).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind !== 'ok') { $('statusStats').innerHTML = '<div class="note bad">'+esc(c.message)+'</div>'; return; }
+        var r = c.result || {};
+        $('statusStats').innerHTML =
+          statCard('Running', r.running ? 'Yes' : 'No') +
+          statCard('Version', esc(r.version || '—'), r.commit ? esc(String(r.commit).slice(0,7)) : '') +
+          statCard('Hosted stores', r.hosted_store_count != null ? r.hosted_store_count : '—') +
+          statCard('Pinned', r.pinned_store_count != null ? r.pinned_store_count : '—') +
+          statCard('Uptime', r.uptime_secs != null ? Math.round(r.uptime_secs/60)+'m' : '—');
+        $('statusRaw').textContent = JSON.stringify(r, null, 2);
+      });
+    }
+
+    function loadStores(){
+      call(CONTROL_METHODS.hostedStoresList).then(function(c){
+        if (handleAuth(c)) return;
+        var wrap = $('storesList'), empty = $('storesEmpty');
+        if (c.kind !== 'ok') { wrap.innerHTML = '<div class="note bad">'+esc(c.message)+'</div>'; empty.classList.add('hidden'); return; }
+        var stores = (c.result && c.result.stores) || [];
+        wrap.innerHTML = '';
+        empty.classList.toggle('hidden', stores.length > 0);
+        stores.forEach(function(s){
+          var row = document.createElement('div');
+          row.className = 'row'; row.setAttribute('data-testid','node-store-row');
+          var caps = (s.capsule_count != null ? s.capsule_count : (s.capsules ? s.capsules.length : 0));
+          row.innerHTML =
+            '<div class="grow"><div class="nm">'+esc(s.store_id)+'</div>'+
+            '<div class="meta">'+caps+' capsule(s) · '+fmtBytes(s.total_bytes)+'</div></div>'+
+            '<span class="badge '+(s.pinned?'pin':'')+'">'+(s.pinned?'Pinned':'Cached')+'</span>';
+          var btn = document.createElement('button');
+          btn.className = 'btn btn-sm' + (s.pinned ? ' btn-danger' : '');
+          btn.type = 'button'; btn.textContent = s.pinned ? 'Unpin' : 'Pin';
+          btn.setAttribute('data-testid', s.pinned ? 'node-store-unpin' : 'node-store-pin');
+          btn.addEventListener('click', function(){
+            var m = s.pinned ? CONTROL_METHODS.hostedStoresUnpin : CONTROL_METHODS.hostedStoresPin;
+            btn.disabled = true;
+            call(m, {store:s.store_id}).then(function(cc){
+              if (handleAuth(cc)) return;
+              if (cc.kind === 'ok') { note('ok', (s.pinned?'Unpinned ':'Pinned ')+s.store_id.slice(0,12)+'…'); loadStores(); }
+              else { btn.disabled = false; note(cc.kind==='not-supported'?'warn':'bad', cc.message); }
+            });
+          });
+          row.appendChild(btn); wrap.appendChild(row);
+        });
+      });
+    }
+
+    function loadCache(){
+      call(CONTROL_METHODS.cacheGet).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind !== 'ok') { $('cacheStats').innerHTML = '<div class="note bad">'+esc(c.message)+'</div>'; return; }
+        var r = c.result || {};
+        $('cacheStats').innerHTML =
+          statCard('Used', fmtBytes(r.used_bytes)) +
+          statCard('Cap', fmtBytes(r.cap_bytes)) +
+          statCard('Shared', r.shared ? 'Yes' : 'No') +
+          statCard('Location', '<span style="font-size:11px">'+esc(r.dir||'—')+'</span>');
+        if (r.cap_bytes) $('capInput').value = Math.round(r.cap_bytes/1048576);
+      });
+    }
+
+    function loadSync(){
+      call(CONTROL_METHODS.syncStatus).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind === 'not-supported') { $('syncStats').innerHTML = '<div class="note muted">§21 sync isn\'t available on this node build.</div>'; return; }
+        if (c.kind !== 'ok') { $('syncStats').innerHTML = '<div class="note bad">'+esc(c.message)+'</div>'; return; }
+        var r = c.result || {};
+        $('syncStats').innerHTML =
+          statCard('Sync', r.available ? 'Available' : 'Off') +
+          statCard('Pinned synced', (r.pinned_synced!=null?r.pinned_synced:'—'), (r.pinned_total!=null?('of '+r.pinned_total):'')) +
+          statCard('Method', '<span style="font-size:11px">'+esc(r.method||'—')+'</span>');
+      });
+    }
+
+    function loadConfig(){
+      call(CONTROL_METHODS.configGet).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind === 'ok' && c.result && c.result.upstream) $('upstreamInput').value = c.result.upstream;
+      });
+    }
+
+    // ---- wire the controls -------------------------------------------------
+
+    function bindDisc(tId, bId){
+      var t = $(tId), b = $(bId);
+      t.addEventListener('click', function(){
+        var open = t.getAttribute('aria-expanded') === 'true';
+        t.setAttribute('aria-expanded', String(!open)); b.classList.toggle('hidden', open);
+      });
+    }
+    bindDisc('statusRawT','statusRawB');
+
+    $('recheckBtn').addEventListener('click', detectNode);
+    $('storesRefresh').addEventListener('click', loadStores);
+
+    $('tokenApply').addEventListener('click', function(){
+      var v = $('tokenInput').value.trim();
+      if (!v) return;
+      token = v; render(true);
+    });
+
+    $('pinBtn').addEventListener('click', function(){
+      var v = $('pinInput').value.trim(); if (!v) return;
+      $('pinBtn').disabled = true;
+      call(CONTROL_METHODS.hostedStoresPin, {store:v}).then(function(c){
+        $('pinBtn').disabled = false;
+        if (handleAuth(c)) return;
+        if (c.kind === 'ok') { $('pinInput').value=''; note('ok','Pinned.'); loadStores(); }
+        else note(c.kind==='not-supported'?'warn':'bad', c.message);
+      });
+    });
+
+    $('capApply').addEventListener('click', function(){
+      var mib = parseInt($('capInput').value, 10);
+      if (!(mib > 0)) return;
+      call(CONTROL_METHODS.cacheSetCap, {cap_bytes: mib*1048576}).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind === 'ok') { note('ok','Cache cap updated.'); loadCache(); }
+        else note(c.kind==='not-supported'?'warn':'bad', c.message);
+      });
+    });
+
+    $('cacheClear').addEventListener('click', function(){
+      call(CONTROL_METHODS.cacheClear).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind === 'ok') { note('ok','Cache cleared.'); loadCache(); loadStores(); }
+        else note(c.kind==='not-supported'?'warn':'bad', c.message);
+      });
+    });
+
+    $('upstreamApply').addEventListener('click', function(){
+      var v = $('upstreamInput').value.trim(); if (!v) return;
+      call(CONTROL_METHODS.configSetUpstream, {upstream:v}).then(function(c){
+        if (handleAuth(c)) return;
+        if (c.kind === 'ok') {
+          note('ok', (c.result && c.result.requires_restart) ? 'Upstream set — restart the node to apply.' : 'Upstream updated.');
+        } else note(c.kind==='not-supported'?'warn':'bad', c.message);
+      });
+    });
+
+    // Agent surface: chia://node?describe=1 emits the node's OpenRPC control
+    // contract as JSON (the page becomes a machine entry point). Falls back to a
+    // small descriptor when no node answers, so an agent always gets structure.
+    function maybeDescribe(){
+      var q = new URLSearchParams(location.search || '');
+      if (q.get('describe') !== '1') return false;
+      function emit(obj){
+        // Replace the page with a single <pre> of the OpenRPC/descriptor JSON.
+        // Use DOM APIs (not innerHTML with a literal body tag) so the document
+        // keeps exactly one body element.
+        document.title = 'chia://node describe';
+        var pre = document.createElement('pre');
+        pre.setAttribute('data-testid', 'node-describe');
+        pre.textContent = JSON.stringify(obj, null, 2);
+        document.body.replaceChildren(pre);
+      }
+      var i = 0;
+      (function tryNext(){
+        if (i >= CONTROL_BASES.length) { emit({surface:'chia://node', node:false, control_methods:CONTROL_METHODS, error_codes:CONTROL_ERR}); return; }
+        var b = CONTROL_BASES[i++];
+        fetch(b + OPENRPC_PATH, {method:'GET', credentials:'omit', cache:'no-store'})
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(j){ if (j) emit(j); else tryNext(); })
+          .catch(function(){ tryNext(); });
+      })();
+      return true;
+    }
+
+    // ---- boot --------------------------------------------------------------
+    if (!maybeDescribe()) {
+      setPosture('no-node');   // safe default until the probe answers
+      detectNode();
+    }
+
+    // Expose the pure policy for the agent/test surface (no-op for users).
+    window.__digNode = {
+      buildControlRequest:buildControlRequest, controlHeaders:controlHeaders,
+      isLocalDigNode:isLocalDigNode, classifyControlResponse:classifyControlResponse,
+      nodeSurfaceState:nodeSurfaceState, CONTROL_METHODS:CONTROL_METHODS, CONTROL_ERR:CONTROL_ERR
+    };
+  })();
+ </script>
+</body>
+</html>

@@ -1135,7 +1135,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,1037 @@
+@@ -0,0 +1,1125 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1144,6 +1144,7 @@
 +
 +#include "chrome/browser/dig/dig_about_html.inc"     // kDigAboutHtml
 +#include "chrome/browser/dig/dig_home_html.inc"      // kDigHomeHtml (the DIG Home)
++#include "chrome/browser/dig/dig_node_html.inc"      // kDigNodeHtml (My Node)
 +#include "chrome/browser/dig/dig_shields_html.inc"   // kDigShieldsHtml
 +#include "chrome/browser/dig/dig_welcome_html.inc"   // kDigWelcomeHtml
 +#include "chrome/browser/dig/dig_native_runtime.h"
@@ -1162,7 +1163,9 @@
 +#include "base/base64.h"
 +#include "base/base_paths.h"
 +#include "base/command_line.h"
++#include "base/environment.h"
 +#include "base/files/file_path.h"
++#include "base/files/file_util.h"
 +#include "base/functional/bind.h"
 +#include "base/no_destructor.h"
 +#include "base/path_service.h"
@@ -1322,6 +1325,61 @@
 +    return {};
 +  }
 +  return {kDigLocalBase, kLocalhostBase};
++}
++
++// ---------------------------------------------------------------------------
++// Local control token (the My Node controller surface, chia://node). The local
++// standalone dig-node gates its control.* admin RPC with a loopback-only token
++// it writes to <config_dir>/control-token (dig-node control.rs). A renderer
++// page CANNOT read the filesystem, so the browser reads it here and injects it
++// into the served chia://node page (the {{DIG_CONTROL_TOKEN}} placeholder),
++// exactly like {{VERSION}} is filled for chia://about. The token never leaves
++// this device — it is sent only to the local node over loopback.
++// ---------------------------------------------------------------------------
++
++// The dig-node config directory (parent of config.json + control-token). Honors
++// an explicit DIG_NODE_CONFIG_DIR override, else %LOCALAPPDATA%/DigNode on
++// Windows / $HOME/DigNode elsewhere — the same location dig-node resolves.
++base::FilePath DigNodeConfigDir() {
++  std::unique_ptr<base::Environment> env = base::Environment::Create();
++  std::string override_dir;
++  if (env->GetVar("DIG_NODE_CONFIG_DIR", &override_dir) && !override_dir.empty()) {
++    return base::FilePath::FromUTF8Unsafe(override_dir);
++  }
++#if BUILDFLAG(IS_WIN)
++  std::string local_app_data;
++  if (env->GetVar("LOCALAPPDATA", &local_app_data) && !local_app_data.empty()) {
++    return base::FilePath::FromUTF8Unsafe(local_app_data).AppendASCII("DigNode");
++  }
++  base::FilePath dir;
++  if (base::PathService::Get(base::DIR_LOCAL_APP_DATA, &dir)) {
++    return dir.AppendASCII("DigNode");
++  }
++  return base::FilePath();
++#else
++  std::string home;
++  if (env->GetVar("HOME", &home) && !home.empty()) {
++    return base::FilePath::FromUTF8Unsafe(home).AppendASCII("DigNode");
++  }
++  return base::FilePath();
++#endif
++}
++
++// Read the local control token (<config_dir>/control-token), trimmed of
++// surrounding whitespace/newlines. Empty when the file is absent/unreadable
++// (then the My Node page shows its "needs the control token" state). BLOCKING
++// file IO — call only on a MayBlock thread.
++std::string ReadControlToken() {
++  base::FilePath dir = DigNodeConfigDir();
++  if (dir.empty()) {
++    return std::string();
++  }
++  std::string token;
++  if (!base::ReadFileToString(dir.AppendASCII("control-token"), &token)) {
++    return std::string();
++  }
++  base::TrimWhitespaceASCII(token, base::TRIM_ALL, &token);
++  return token;
 +}
 +
 +// A live dig-node /health body confirms BOTH status:"ok" and mode:"local-node"
@@ -1658,6 +1716,19 @@
 +                  std::move(on_response));
 +  }
 +
++  // Serve chia://node with the local control token injected. `token` is the
++  // trimmed <config_dir>/control-token (empty when no node has been set up — the
++  // page then shows its "needs the control token" state). The placeholder is
++  // replaced with the token value, never logged or sent off-machine.
++  void ServeNodePage(std::string token) {
++    output_ = kDigNodeHtml;
++    base::ReplaceSubstringsAfterOffset(&output_, 0, "{{DIG_CONTROL_TOKEN}}",
++                                       token);
++    mime_type_ = "text/html";
++    verified_ = false;  // a local UI surface, not chain-verified content
++    SendResponse();
++  }
++
 +  void Start(const GURL& url) {
 +    // chia://home is the DIG Browser's own home page (the new-tab page points
 +    // here). It is a trusted browser-internal resource embedded in the binary,
@@ -1709,6 +1780,23 @@
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
 +      SendResponse();
++      return;
++    }
++    // chia://node is the "My Node" controller surface — the browser-as-CONTROLLER
++    // side of the serve/consume split (SYSTEM.md → "the browser is also the
++    // dig-node's CONTROLLER UI"). When a LOCAL standalone dig-node is present, the
++    // page drives its control.* admin RPCs over loopback. A trusted
++    // browser-internal page embedded in the binary; the only browser-side work is
++    // injecting the node's loopback control token (read from <config_dir>/
++    // control-token — a renderer page can't read the filesystem) into the page's
++    // {{DIG_CONTROL_TOKEN}} placeholder, like {{VERSION}} for chia://about. The
++    // read is blocking file IO → do it on a MayBlock thread, then serve.
++    if (url.host() == "node") {
++      base::ThreadPool::PostTaskAndReplyWithResult(
++          FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++          base::BindOnce(&ReadControlToken),
++          base::BindOnce(&DigURLLoader::ServeNodePage,
++                         weak_factory_.GetWeakPtr()));
 +      return;
 +    }
 +    // chia://wallet opens the built-in Chia wallet, served in-process by the DIG

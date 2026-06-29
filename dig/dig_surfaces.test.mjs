@@ -87,6 +87,7 @@ test('newtab: primary CTAs/inputs/nav carry stable data-testid', () => {
   assert.match(newtab, /data-testid="ntp-tab-apps"/);
   assert.match(newtab, /data-testid="ntp-tab-search"/);
   assert.match(newtab, /data-testid="ntp-wallet"/, 'wallet button');
+  assert.match(newtab, /data-testid="ntp-node"/, 'My Node link');
   assert.match(newtab, /data-testid="ntp-publish"/, 'publish CTA');
   // the apps directory is driven from a data array; each card is addressable.
   assert.match(newtab, /data-testid="ntp-app-card"/, 'app cards');

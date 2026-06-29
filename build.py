@@ -207,6 +207,17 @@ def _apply_dig_branding(source_tree):
         _ROOT_DIR / 'dig' / 'shields' / 'dig_shields.html',
         'kDigShieldsHtml', 'DIGSHIELDS',
         'chrome/browser/dig/dig_shields_html.inc')
+    # chia://node — the "My Node" controller surface (the browser-as-CONTROLLER
+    # side of the serve/consume split). When a LOCAL standalone dig-node is
+    # present, it drives the node's control.* admin RPCs over loopback. The
+    # {{DIG_CONTROL_TOKEN}} placeholder in the page is filled at REQUEST time by
+    # the dig loader (it reads <config_dir>/control-token browser-side — a
+    # renderer page can't read the filesystem), mirroring how {{VERSION}} is
+    # filled for chia://about; build.py just embeds the page verbatim.
+    _gen_embedded_page(
+        _ROOT_DIR / 'dig' / 'node' / 'dig_node.html',
+        'kDigNodeHtml', 'DIGNODE',
+        'chrome/browser/dig/dig_node_html.inc')
 
     # Generate the embeddable injected wallet provider (window.chia, CHIP-0002),
     # compiled into the renderer and injected into every page at document start

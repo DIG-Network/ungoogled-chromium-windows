@@ -90,6 +90,32 @@ local dig-node *is* present it consumes from it and they share one `.dig` cache.
   [`dig/node/dig_source_resolution.mjs`](dig/node/dig_source_resolution.mjs)
   with a Node test harness; the native loader mirrors it in C++.
 
+### Run & manage your node — `chia://node` (My Node)
+
+The DIG Browser is also your node's **controller**. When a local standalone
+**dig-node** is running, open **`chia://node`** ("My Node") to manage it: see its
+status, the **stores it hosts** (pin / unpin), the **cache** (view / clear / set
+cap), **§21 sync** status, and the **upstream** it fetches from. It drives the
+node's `control.*` admin RPCs over loopback only.
+
+- **Hidden when you have no local node.** Consumption never needs one, so with no
+  node present the page just explains that and links to install dig-node — nothing
+  to manage.
+- **Loopback-gated by a control token.** The node writes a secret token to
+  `<config_dir>/control-token`; every `control.*` call carries it in the
+  `X-Dig-Control-Token` header. The browser reads the token on this device and
+  injects it into the page (a renderer page can't read the filesystem); it is
+  sent only to your local node and never leaves the machine.
+- **Self-describing.** `chia://node?describe=1` emits the node's
+  `GET /openrpc.json` control contract as JSON (an agent entry point). The control
+  policy (method names, the auth scheme, the catalogued error codes
+  `-32020`/`-32021`/`-32022`) lives in
+  [`dig/node/dig_node_controller.mjs`](dig/node/dig_node_controller.mjs) with a
+  Node test harness; the page restates it and `dig/node/dig_node.test.mjs` guards
+  the two against drift and against the dig-node contract.
+- Local **publishing / deploy** from My Node is a separate, later pass — it is not
+  wired here.
+
 The native crypto (`net/url_request/dig_crypto.cc`) is a byte-for-byte C++ port
 of `digstore-core` (`crypto.rs` / `merkle.rs` / `urn.rs`), so it stays
 byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changing
@@ -125,15 +151,18 @@ out-of-band knowledge:
   key/salt / corrupt), `DIG_ERR_NOT_FOUND` (blind miss / decoy / invalid URN),
   `DIG_ERR_NETWORK` (node/CDN unreachable or transport failure).
 - **Driveable UI** — the built-in `dig/*` surfaces (`chia://home`, `about`,
-  `welcome`, `shields`) carry stable `data-testid` hooks and ARIA landmarks;
-  `chia://shields` additionally exposes the active page's verification verdict as
+  `welcome`, `shields`, `node`) carry stable `data-testid` hooks and ARIA
+  landmarks; `chia://shields` exposes the active page's verification verdict as
   document `data-dig-scheme` / `data-dig-verified` / `data-dig-source` /
-  `data-dig-capsule` attributes.
+  `data-dig-capsule` attributes, and `chia://node` exposes its controller posture
+  as `data-dig-node` (`no-node` / `needs-token` / `ready`).
 
 The pure JS surfaces have Node test harnesses (no Chromium build needed) under
-`dig/`: `dig/provider/dig_provider.test.mjs`, `dig/dig_surfaces.test.mjs`, and
-`dig/newtab/dig_newtab.test.mjs`. `devutils/validate_patch_hunks.py` checks that
-the hand-edited `.patch` hunk headers stay internally consistent.
+`dig/`: `dig/provider/dig_provider.test.mjs`, `dig/dig_surfaces.test.mjs`,
+`dig/newtab/dig_newtab.test.mjs`, `dig/node/dig_source_resolution.test.mjs`,
+`dig/node/dig_node_controller.test.mjs`, and `dig/node/dig_node.test.mjs`.
+`devutils/validate_patch_hunks.py` checks that the hand-edited `.patch` hunk
+headers stay internally consistent.
 
 ## DIG Browser build layout
 
