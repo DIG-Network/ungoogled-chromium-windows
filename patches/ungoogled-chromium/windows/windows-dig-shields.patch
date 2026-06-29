@@ -47,7 +47,7 @@
      "//chrome/browser/feedback",
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/dig_shields_button.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,62 @@
 +// Copyright 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -90,9 +90,14 @@
 +  ~DigShieldsButton() override;
 +
 + private:
-+  // Opens the DIG identity panel (chia://shields) as a small popup anchored
-+  // beneath this button, carrying the active tab's dig status as query params.
++  // Opens the DIG identity panel. A plain click DOCKS it in Chromium's Side
++  // Panel (the kDigShields entry); Alt+click flips the dock edge (left/right);
++  // Shift+click pops it out as a free-floating window (ShowShieldsPopup).
 +  void OpenShieldsPanel(const ui::Event& event);
++
++  // Shift+click fallback: opens chia://shields as a small popup anchored beneath
++  // this button, carrying the active tab's dig status as query params.
++  void ShowShieldsPopup();
 +
 +  // Builds chia://shields?... with the active tab's dig:// identity status
 +  // (scheme, verified, source = local/remote, host/store id).
@@ -107,7 +112,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_DIG_SHIELDS_BUTTON_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/toolbar/dig_shields_button.cc
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,168 @@
 +// Copyright 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -122,15 +127,23 @@
 +#include "chrome/app/vector_icons/vector_icons.h"
 +#include "chrome/browser/dig/dig_tab_helper.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/navigator/browser_navigator.h"
 +#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
++#include "chrome/browser/ui/side_panel/side_panel_enums.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
++#include "chrome/common/pref_names.h"
++#include "components/prefs/pref_service.h"
 +#include "components/tabs/public/tab_interface.h"
 +#include "content/public/browser/web_contents.h"
 +#include "ui/base/metadata/metadata_impl_macros.h"
 +#include "ui/views/accessibility/view_accessibility.h"
 +#include "ui/base/window_open_disposition.h"
 +#include "ui/events/event.h"
++#include "ui/events/event_constants.h"
 +#include "ui/gfx/geometry/rect.h"
 +#include "url/gurl.h"
 +
@@ -154,7 +167,11 @@
 +  // it with the active toolbar theme color and size it like every other toolbar
 +  // button (back, forward, reload, the wallet button).
 +  SetVectorIcons(kDigShieldIcon, kDigShieldIcon);
-+  SetTooltipText(u"DIG identity & privacy");
++  // Surface the click modifiers: a bare click docks the panel, Alt+click flips
++  // which edge it docks to, and Shift+click pops it out as its own window.
++  SetTooltipText(
++      u"DIG identity & privacy\nClick to open · Alt+click: dock left/right · "
++      u"Shift+click: pop out");
 +  GetViewAccessibility().SetName(std::u16string(u"DIG identity & privacy"));
 +  SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON);
 +  SizeToPreferredSize();
@@ -205,19 +222,48 @@
 +    return;
 +  }
 +
-+  // Anchor the panel just beneath this button's bottom-left, like Brave Shields.
++  // Shift+click pops the identity panel OUT as its own free-floating window
++  // anchored beneath the button -- the OLD pre-side-panel behavior, now opt-in.
++  // Default is the DOCKED side panel.
++  if (event.flags() & ui::EF_SHIFT_DOWN) {
++    ShowShieldsPopup();
++    return;
++  }
++
++  // Alt+click flips which edge the side panel docks to. This is Chromium's OWN
++  // side-panel alignment pref (true = right [the default], false = left), shared
++  // with the wallet panel and Chromium's own entries, and persisted per profile.
++  if (PrefService* prefs = profile_->GetPrefs();
++      prefs && (event.flags() & ui::EF_ALT_DOWN)) {
++    prefs->SetBoolean(prefs::kSidePanelHorizontalAlignment,
++                      !prefs->GetBoolean(prefs::kSidePanelHorizontalAlignment));
++  }
++
++  // Default: open the DIG identity panel DOCKED in Chromium's built-in Side
++  // Panel (the kDigShields global entry registered in dig_side_panel.cc, which
++  // builds chia://shields?... for the active tab at show-time). Toggle so a
++  // second click closes it. NOT a free-floating window.
++  if (browser_window_interface_) {
++    if (SidePanelUI* side_panel_ui =
++            browser_window_interface_->GetFeatures().side_panel_ui()) {
++      side_panel_ui->Toggle(SidePanelEntryKey(SidePanelEntryId::kDigShields),
++                            SidePanelOpenTrigger::kToolbarButton);
++    }
++  }
++}
++
++void DigShieldsButton::ShowShieldsPopup() {
++  // Shift+click fallback: open chia://shields (with the active tab's status as
++  // query params) in a small popup window anchored just beneath this button's
++  // bottom-left, the way Brave anchors its Shields popup under the lion.
 +  gfx::Rect anchor;
 +  if (GetWidget()) {
 +    anchor = GetBoundsInScreen();
 +  }
 +  gfx::Rect bounds(kPanelWidth, kPanelHeight);
 +  if (!anchor.IsEmpty()) {
-+    int x = anchor.x();
-+    int y = anchor.bottom() + 6;
-+    // Keep the panel from running off the right edge of the button's monitor by
-+    // shifting it left when the button sits near the right side of the toolbar.
-+    bounds.set_x(x);
-+    bounds.set_y(y);
++    bounds.set_x(anchor.x());
++    bounds.set_y(anchor.bottom() + 6);
 +  }
 +
 +  NavigateParams params(profile_.get(), GURL(BuildPanelUrl()),

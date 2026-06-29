@@ -1,0 +1,282 @@
+# DIG Browser: dock the DIG Wallet (chia://wallet) and DIG Shields
+# (chia://shields) surfaces into Chromium's built-in Side Panel.
+#
+# PROBLEM this fixes (#114): the wallet + shields toolbar buttons previously
+# opened their chia:// surfaces with NavigateParams + WindowOpenDisposition::
+# NEW_POPUP -- i.e. as FREE-FLOATING popup OS windows merely *positioned* at the
+# edge of the browser window. They never used Chromium's Side Panel, so they did
+# not actually dock (they floated, could be dragged off, and didn't reserve
+# layout space). The user reported exactly this.
+#
+# FIX: register chia://wallet and chia://shields as GLOBAL (window-scoped)
+# SidePanelEntry objects so they open DOCKED in the real Side Panel from any tab.
+# This patch carries the shared side-panel plumbing; the toolbar buttons are
+# rewired to drive it in windows-dig-browser-ux.patch (wallet / home_button.cc)
+# and windows-dig-shields.patch (DigShieldsButton).
+#
+# Mechanism (verified against the Chromium 149 Side Panel headers):
+#   * Two new SidePanelEntryId values -- kDigWallet, kDigShields -- added to the
+#     SIDE_PANEL_ENTRY_IDS macro in side_panel_entry_id.h, each with a
+#     std::nullopt action id, mirroring the existing kWebView / kSidePanelDev
+#     generic entries. (The registry keys entries by id and rejects duplicates,
+#     so each docked surface needs its OWN id; the single kWebView id can host
+#     only one entry per registry.) The macro drives the To-String / histogram /
+#     action-id switches automatically, so no exhaustive switch breaks.
+#   * dig_side_panel.{h,cc}: RegisterDigSidePanelEntries() builds, for each
+#     surface, a SidePanelEntry whose CreateContentCallback returns a plain
+#     views::WebView (profile-bound) that LoadInitialURL()s the chia:// surface.
+#     The chia:// scheme is served in-process by the DIG URLLoaderFactory for
+#     navigations + subresources (windows-dig-browser-ux.patch), so the docked
+#     WebView renders the SAME page the popup did -- verified + decrypted the
+#     same way. The page HTML/JS is UNCHANGED.
+#   * The entries are registered HEADER-LESS (set_should_show_header(false)): a
+#     std::nullopt-action entry must skip SidePanelHeaderController, whose
+#     SidePanelHelper::GetActionItem() does CHECK(action_id.has_value()) and
+#     would crash on a no-action id. The chia:// pages provide their own header,
+#     and the toolbar button toggles the panel closed, so no Chromium header /
+#     pin-action is needed. (We deliberately do NOT mint a new ActionId: that
+#     would require new IDC command ids + grit string resources for no UX gain.)
+#   * Registered from SidePanelHelper::PopulateGlobalEntries() -- the one hook
+#     where Chromium registers its own global entries (reading list, bookmarks).
+#
+# Left/right docking is the Side Panel's OWN native pref,
+# prefs::kSidePanelHorizontalAlignment ("side_panel.is_right_aligned"; true =
+# right [default], false = left). The toolbar buttons flip that pref on
+# Alt+click, so the whole side panel follows the chosen edge and it persists per
+# profile -- no DIG-specific docking pref is needed.
+#
+# NOTE: SIDE_PANEL_ENTRY_IDS carries a LINT.IfChange to actions.xml /
+# histograms.xml for upstream metrics. This fork does not upload those metrics,
+# and the new ids use unique histogram names ("DigWallet"/"DigShields"), so the
+# build is unaffected; the xml is intentionally not touched.
+#
+# BUILD + MANUAL VERIFY (no Chromium build runs in this repo -- follow-up):
+#   1. Build the browser (the normal tag/dispatch build workflow).
+#   2. Click the DIG Wallet (left-most) toolbar button: chia://wallet must open
+#      DOCKED in the Side Panel on the RIGHT, reserving layout space (the page
+#      content reflows; the panel is NOT a separate draggable window). Click the
+#      button again: the panel closes (Toggle).
+#   3. Click the DIG Shields button: chia://shields docks the same way.
+#   4. Alt+click either button: the panel re-docks on the LEFT edge (and the
+#      choice sticks for Chromium's own side-panel entries too).
+#   5. Shift+click either button: the surface opens as a free-floating popup
+#      window (the old behavior, now opt-in).
+--- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
++++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+@@ -25,7 +25,12 @@
+   V(kReadAnything, kActionSidePanelShowReadAnything, "ReadAnything")          \
+   V(kFeed, kActionSidePanelShowFeed, "Feed")                                  \
+   V(kWebView, std::nullopt, "WebView")                                        \
+   V(kContextualTasks, kActionSidePanelShowContextualTasks, "ContextualTasks") \
++  /* DIG Browser: docked chia://wallet + chia://shields surfaces. std::nullopt \
++     action id (like kWebView) -- driven by the DIG toolbar buttons, not a    \
++     pinned side-panel action; registered header-less. */                     \
++  V(kDigWallet, std::nullopt, "DigWallet")                                    \
++  V(kDigShields, std::nullopt, "DigShields")                                  \
+   /* Contextual Entries */                                                    \
+   V(kSideSearch, kActionSidePanelShowSideSearch, "SideSearch")                \
+   V(kLens, kActionSidePanelShowLens, "Lens")                                  \
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/dig_side_panel.h
+@@ -0,0 +1,34 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_DIG_SIDE_PANEL_H_
++#define CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_DIG_SIDE_PANEL_H_
++
++class Browser;
++class SidePanelRegistry;
++
++namespace dig {
++
++// DIG Browser: registers the DIG Wallet (chia://wallet) and DIG Shields
++// (chia://shields) surfaces as GLOBAL (window-scoped) side-panel entries, so
++// they dock into Chromium's built-in Side Panel from any tab instead of opening
++// as free-floating popup windows.
++//
++// Each entry's content is a plain views::WebView that LoadInitialURL()s the
++// existing chia:// surface -- the page HTML/JS is UNCHANGED; it is just hosted
++// in the docked panel rather than a separate window. The entries use the
++// kDigWallet / kDigShields ids (side_panel_entry_id.h, std::nullopt action id,
++// mirroring kWebView/kSidePanelDev) and are registered header-less
++// (should_show_header(false)): the chia:// pages carry their own header, and a
++// std::nullopt-action entry must skip SidePanelHeaderController, whose
++// SidePanelHelper::GetActionItem() CHECK-fails on a no-action id.
++//
++// Called from SidePanelHelper::PopulateGlobalEntries(), the single hook where
++// Chromium registers its own global entries (reading list, bookmarks, ...).
++void RegisterDigSidePanelEntries(Browser* browser,
++                                 SidePanelRegistry* window_registry);
++
++}  // namespace dig
++
++#endif  // CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_DIG_SIDE_PANEL_H_
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/dig_side_panel.cc
+@@ -0,0 +1,120 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/side_panel/dig_side_panel.h"
++
++#include <memory>
++#include <string>
++
++#include "base/functional/bind.h"
++#include "base/strings/escape.h"
++#include "base/strings/strcat.h"
++#include "chrome/browser/dig/dig_tab_helper.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_scope.h"
++#include "chrome/browser/ui/side_panel/side_panel_registry.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/web_contents.h"
++#include "ui/views/controls/webview/webview.h"
++#include "ui/views/view.h"
++#include "url/gurl.h"
++
++namespace dig {
++
++namespace {
++
++// The docked DIG panels are narrow vertical panels (the chia://wallet and
++// chia://shields pages are both designed for a slim column).
++constexpr int kDigPanelWidth = 420;
++
++int DigPanelWidth() {
++  return kDigPanelWidth;
++}
++
++// Builds chia://shields?... with the ACTIVE tab's dig:// identity status, the
++// same query the DigShieldsButton popup used to pass, so the docked panel
++// reflects the page it was opened over. (Snapshot at show-time, like the popup;
++// the page HTML/JS that reads location.search is UNCHANGED.) Kept in lockstep
++// with DigShieldsButton::BuildPanelUrl().
++std::string BuildShieldsUrl(BrowserWindowInterface& browser) {
++  std::string scheme = "web";
++  std::string verified = "0";
++  std::string source = "remote";
++  std::string host;
++
++  if (tabs::TabInterface* tab = browser.GetActiveTabInterface()) {
++    if (content::WebContents* contents = tab->GetContents()) {
++      const GURL& url = contents->GetLastCommittedURL();
++      host = url.host();
++      if (url.SchemeIs("chia")) {
++        if (host == "home" || host == "about" || host == "welcome" ||
++            host == "wallet" || host == "shields" || host == "settings") {
++          scheme = "internal";
++        } else {
++          scheme = "dig";
++          verified = "1";
++        }
++        if (DigTabHelper* helper = DigTabHelper::FromWebContents(contents)) {
++          source = helper->served_locally() ? "local" : "remote";
++        }
++      }
++    }
++  }
++
++  return base::StrCat({"chia://shields?scheme=", scheme, "&verified=", verified,
++                       "&source=", source, "&host=",
++                       base::EscapeQueryParamValue(host, /*use_plus=*/false)});
++}
++
++// Side-panel content for chia://wallet: a profile-bound WebView that loads the
++// in-process DIG Wallet UI. The chia:// scheme is served by the DIG
++// URLLoaderFactory, so this renders exactly the page the popup did -- verified +
++// decrypted the same way. The scope is unused (the wallet is profile-scoped).
++std::unique_ptr<views::View> CreateWalletView(Profile* profile,
++                                              SidePanelEntryScope& scope) {
++  auto web_view = std::make_unique<views::WebView>(profile);
++  web_view->LoadInitialURL(GURL("chia://wallet"));
++  return web_view;
++}
++
++// Side-panel content for chia://shields: a profile-bound WebView loading
++// chia://shields with the active tab's dig status as query params (see
++// BuildShieldsUrl). The scope yields the browser window -> active tab.
++std::unique_ptr<views::View> CreateShieldsView(Profile* profile,
++                                               SidePanelEntryScope& scope) {
++  auto web_view = std::make_unique<views::WebView>(profile);
++  web_view->LoadInitialURL(GURL(BuildShieldsUrl(scope.GetBrowserWindowInterface())));
++  return web_view;
++}
++
++void RegisterSurface(SidePanelRegistry* window_registry,
++                     SidePanelEntryId id,
++                     SidePanelEntry::CreateContentCallback factory) {
++  auto entry = std::make_unique<SidePanelEntry>(
++      SidePanelEntry::Key(id), std::move(factory),
++      base::BindRepeating(&DigPanelWidth));
++  // The chia:// surfaces own their header UI, and a std::nullopt-action entry
++  // must NOT get a SidePanelHeaderController (it would CHECK-fail in
++  // SidePanelHelper::GetActionItem). Render header-less; the toolbar button
++  // toggles the panel closed.
++  entry->set_should_show_header(false);
++  window_registry->Register(std::move(entry));
++}
++
++}  // namespace
++
++void RegisterDigSidePanelEntries(Browser* browser,
++                                 SidePanelRegistry* window_registry) {
++  Profile* profile = browser->profile();
++  RegisterSurface(window_registry, SidePanelEntryId::kDigWallet,
++                  base::BindRepeating(&CreateWalletView, profile));
++  RegisterSurface(window_registry, SidePanelEntryId::kDigShields,
++                  base::BindRepeating(&CreateShieldsView, profile));
++}
++
++}  // namespace dig
+--- a/chrome/browser/ui/views/side_panel/BUILD.gn
++++ b/chrome/browser/ui/views/side_panel/BUILD.gn
+@@ -16,7 +16,9 @@
+     "customize_chrome/customize_chrome_utils.cc",
+     "customize_chrome/customize_chrome_utils.h",
+     "customize_chrome/side_panel_controller_views.cc",
+     "customize_chrome/side_panel_controller_views.h",
++    "dig_side_panel.cc",
++    "dig_side_panel.h",
+     "extensions/extension_side_panel_coordinator.cc",
+     "extensions/extension_side_panel_coordinator.h",
+     "extensions/extension_side_panel_manager.cc",
+@@ -102,6 +104,9 @@
+     "//chrome/app:generated_resources",
+     "//chrome/app:generated_resources_grit",
+     "//chrome/app/vector_icons",
++    # DIG Browser: dig_side_panel.cc reads DigTabHelper::served_locally() to
++    # build the chia://shields panel URL for the active tab.
++    "//chrome/browser/dig",
+     "//chrome/browser/favicon",
+     "//chrome/browser/glic",
+     "//chrome/browser/media/webrtc",
+--- a/chrome/browser/ui/views/side_panel/side_panel_helper.cc
++++ b/chrome/browser/ui/views/side_panel/side_panel_helper.cc
+@@ -15,5 +15,6 @@
+ #include "chrome/browser/ui/views/side_panel/bookmarks/bookmarks_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/comments/comments_side_panel_coordinator.h"
++#include "chrome/browser/ui/views/side_panel/dig_side_panel.h"
+ #include "chrome/browser/ui/views/side_panel/history/history_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/history_clusters/history_clusters_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/reading_list/reading_list_side_panel_coordinator.h"
+@@ -34,7 +35,12 @@
+   // Add bookmarks.
+   BookmarksSidePanelCoordinator::From(browser)->CreateAndRegisterEntry(
+       window_registry);
+
++  // DIG Browser: dock the DIG Wallet (chia://wallet) and DIG Shields
++  // (chia://shields) surfaces into the Side Panel as global entries, available
++  // from any tab. Driven by the DIG toolbar buttons (see dig_side_panel.h).
++  dig::RegisterDigSidePanelEntries(browser, window_registry);
++
+   if (webui_browser::IsWebUIBrowserEnabled()) {
+     // TODO(webium): Consider supporting additional side panels beyond reading
+     // list and bookmarks.

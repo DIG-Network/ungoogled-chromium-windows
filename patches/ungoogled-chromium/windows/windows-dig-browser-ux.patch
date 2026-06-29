@@ -61,12 +61,17 @@
  void ThemeService::Shutdown() {
 --- a/chrome/browser/ui/views/toolbar/home_button.cc
 +++ b/chrome/browser/ui/views/toolbar/home_button.cc
-@@ -19,6 +19,8 @@
+@@ -19,6 +19,13 @@
  #include "chrome/browser/ui/browser.h"
  #include "chrome/browser/ui/browser_element_identifiers.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 +#include "chrome/browser/ui/navigator/browser_navigator.h"
 +#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
++#include "chrome/browser/ui/side_panel/side_panel_enums.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
  #include "chrome/browser/ui/ui_features.h"
  #include "chrome/browser/ui/view_ids.h"
  #include "chrome/browser/ui/views/chrome_layout_provider.h"
@@ -81,11 +86,12 @@
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
  #include "ui/views/controls/styled_label.h"
-@@ -148,17 +154,103 @@
+@@ -148,17 +155,109 @@
                          kActionHome),
                      nullptr),
        prefs_(browser_window_interface->GetProfile()->GetPrefs()),
 +      profile_(browser_window_interface->GetProfile()),
++      browser_window_interface_(browser_window_interface),
        coordinator_(prefs_) {
    SetProperty(views::kElementIdentifierKey, kToolbarHomeButtonElementId);
    SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
@@ -133,22 +139,13 @@
 +    return;
 +  }
 +
-+  // Alt+click toggles which edge the panel docks to (persisted per profile),
-+  // then (re)opens the panel on the new side.
-+  if (prefs_ && (event.flags() & ui::EF_ALT_DOWN)) {
-+    prefs_->SetBoolean("dig.wallet_panel.dock_left",
-+                       !prefs_->GetBoolean("dig.wallet_panel.dock_left"));
-+  }
-+
-+  // Anchor the panel to the browser window this button lives in.
-+  gfx::Rect window_bounds;
-+  if (GetWidget()) {
-+    window_bounds = GetWidget()->GetWindowBoundsInScreen();
-+  }
-+
-+  // Shift+click pops the wallet OUT as its own free-floating window (not docked
-+  // to an edge), centered over the browser window.
-+  if ((event.flags() & ui::EF_SHIFT_DOWN) || window_bounds.IsEmpty()) {
++  // Shift+click pops the wallet OUT as its own free-floating window -- the OLD
++  // pre-side-panel behavior, now opt-in. Default is the DOCKED side panel.
++  if (event.flags() & ui::EF_SHIFT_DOWN) {
++    gfx::Rect window_bounds;
++    if (GetWidget()) {
++      window_bounds = GetWidget()->GetWindowBoundsInScreen();
++    }
 +    gfx::Rect popout(kWalletPopoutWidth, kWalletPopoutHeight);
 +    if (!window_bounds.IsEmpty()) {
 +      popout.set_x(window_bounds.x() +
@@ -160,20 +157,34 @@
 +    return;
 +  }
 +
-+  // Default: dock the panel to an edge of the browser window, full height.
-+  const bool dock_left =
-+      prefs_ && prefs_->GetBoolean("dig.wallet_panel.dock_left");
-+  gfx::Rect docked(kWalletPanelWidth, window_bounds.height());
-+  docked.set_y(window_bounds.y());
-+  docked.set_x(dock_left ? window_bounds.x()
-+                         : window_bounds.right() - kWalletPanelWidth);
-+  ShowWalletWindow(docked);
++  // Alt+click flips which edge the side panel docks to. This is Chromium's OWN
++  // side-panel alignment pref (true = right [the default], false = left), so the
++  // whole side panel -- the wallet, the shields panel, and Chromium's own
++  // entries -- follows the chosen edge, and the choice persists per profile.
++  if (prefs_ && (event.flags() & ui::EF_ALT_DOWN)) {
++    prefs_->SetBoolean(
++        prefs::kSidePanelHorizontalAlignment,
++        !prefs_->GetBoolean(prefs::kSidePanelHorizontalAlignment));
++  }
++
++  // Default: open the DIG Wallet DOCKED in Chromium's built-in Side Panel (the
++  // kDigWallet global entry registered in dig_side_panel.cc), on the edge chosen
++  // above. Toggle so a second click on the button closes it, matching every
++  // other side-panel toolbar entry. NOT a free-floating window.
++  if (browser_window_interface_) {
++    if (SidePanelUI* side_panel_ui =
++            browser_window_interface_->GetFeatures().side_panel_ui()) {
++      side_panel_ui->Toggle(SidePanelEntryKey(SidePanelEntryId::kDigWallet),
++                            SidePanelOpenTrigger::kToolbarButton);
++    }
++  }
 +}
 +
 +void HomeButton::ShowWalletWindow(const gfx::Rect& bounds) {
-+  // Open chia://wallet (the in-process DIG Wallet UI) in a minimal-chrome popup
-+  // window placed at `bounds`. NEW_POPUP with the default window_action
-+  // auto-shows the window; the position + size come from window_features.
++  // Shift+click fallback: open chia://wallet in a minimal-chrome popup window
++  // placed at `bounds` (the pre-side-panel behavior). NEW_POPUP with the default
++  // window_action auto-shows the window; position + size come from
++  // window_features.
 +  NavigateParams params(profile_.get(), GURL("chia://wallet"),
 +                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
 +  params.disposition = WindowOpenDisposition::NEW_POPUP;
@@ -198,7 +209,7 @@
  
  class HomePageUndoBubbleCoordinator {
   public:
-@@ -60,7 +61,18 @@
+@@ -60,7 +61,21 @@
        ui::mojom::DragOperation& output_drag_op,
        std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner);
  
@@ -214,6 +225,9 @@
 +
    const raw_ptr<PrefService> prefs_;
 +  const raw_ptr<Profile> profile_;
++  // DIG Browser: used to reach the Side Panel UI (GetFeatures().side_panel_ui())
++  // so OpenDigWallet can dock chia://wallet instead of opening a free window.
++  const raw_ptr<BrowserWindowInterface> browser_window_interface_;
    HomePageUndoBubbleCoordinator coordinator_;
  
    base::WeakPtrFactory<HomeButton> weak_ptr_factory_{this};
@@ -293,7 +307,7 @@
 +CLOSE
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -116,15 +116,23 @@
+@@ -116,15 +116,18 @@
    registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  
@@ -311,15 +325,10 @@
  
    registry->RegisterBooleanPref(prefs::kShowForwardButton, true,
                                  pref_registration_flags);
-+  // DIG Browser: which edge the DIG Wallet side panel docks to. Default false =
-+  // dock RIGHT (Chromium's own side panel default side); true = dock LEFT.
-+  // Toggled from the wallet button (Alt+click) and persisted per profile.
-+  registry->RegisterBooleanPref("dig.wallet_panel.dock_left", false,
-+                                pref_registration_flags);
    registry->RegisterInt64Pref(prefs::kBookmarkBarHoverCount, 0);
    registry->RegisterInt64Pref(prefs::kBookmarkBarNavigationCount, 0);
    registry->RegisterBooleanPref(prefs::kPinContextualTaskButton, true,
-@@ -137,26 +145,27 @@
+@@ -137,26 +140,27 @@
    registry->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu, true);
    registry->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar, true);
    registry->RegisterBooleanPref(
@@ -351,7 +360,7 @@
    registry->RegisterListPref(
        prefs::kWebRTCDiagnosticLogCollectionAllowedForOrigins,
        base::ListValue());
-@@ -215,8 +224,10 @@
+@@ -215,8 +219,10 @@
                                  false);
  #endif
  

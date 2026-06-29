@@ -161,6 +161,40 @@ byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changi
 the URN scheme, retrieval key, Merkle tags, or HKDF/AES parameters here **must**
 be coordinated with the other modules per `SYSTEM.md`.
 
+### Toolbar buttons dock into the Side Panel
+
+The **DIG Wallet** button (left-most, the wallet mark — it is the repurposed home
+button) and the **DIG identity** button (next to it, the shield mark) both open
+their `chia://` surface **DOCKED in Chromium's built-in Side Panel** by default —
+not a free-floating popup window. A docked panel reserves layout space (the page
+content reflows beside it) and stays attached to the window; it cannot be dragged
+off. Click the button again to close it (the panel toggles), exactly like every
+other side-panel toolbar entry.
+
+| Click | Wallet button (`chia://wallet`) | Identity button (`chia://shields`) |
+|-------|----------------------------------|-------------------------------------|
+| plain click | dock in the Side Panel (right edge by default); toggle closed | same |
+| **Alt**+click | flip which edge the Side Panel docks to (left ↔ right; persists per profile) | same (shared pref) |
+| **Shift**+click | pop out as a free-floating window (the old pre-Side-Panel behavior, now opt-in) | same |
+
+Mechanism: the two surfaces are registered as **global (window-scoped)
+`SidePanelEntry` objects** under their own ids — `kDigWallet` / `kDigShields`
+(`side_panel_entry_id.h`, both with a `std::nullopt` action id like Chromium's
+own `kWebView`/`kSidePanelDev`) — from `SidePanelHelper::PopulateGlobalEntries()`,
+the same hook Chromium uses for reading-list/bookmarks. Each entry's content is a
+profile-bound `views::WebView` that `LoadInitialURL()`s the existing `chia://`
+surface, so the docked panel renders the **same page** the popup did, verified and
+decrypted the same way — the page HTML/JS is unchanged. The entries are registered
+header-less (`set_should_show_header(false)`) because a `std::nullopt`-action entry
+must skip the `SidePanelHeaderController` (its `SidePanelHelper::GetActionItem()`
+`CHECK`s the action id has a value); the `chia://` pages carry their own header.
+The dock edge is Chromium's own `prefs::kSidePanelHorizontalAlignment`
+(`side_panel.is_right_aligned`), so Alt+click moves the whole Side Panel — DIG
+panels and Chromium's own entries alike. The plumbing lives in
+`windows-dig-sidepanel.patch` (`dig_side_panel.{h,cc}`); the buttons drive it via
+`BrowserWindowInterface::GetFeatures().side_panel_ui()->Toggle(...)` in
+`windows-dig-browser-ux.patch` (wallet) and `windows-dig-shields.patch` (identity).
+
 ### DIG identity panel — `chia://shields` (the per-resource proof ledger)
 
 The signature DIG-identity toolbar button (next to the wallet button) opens the
