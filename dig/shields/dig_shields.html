@@ -62,6 +62,30 @@
         border-radius:var(--pill);padding:5px 10px;background:rgba(120,53,235,.13);
         border:1px solid var(--line-2);color:var(--muted)}
   .chip .dot{width:7px;height:7px}
+  /* per-resource inclusion-proof ledger */
+  .ledger{margin-top:6px}
+  .lsec{margin-top:14px}
+  .lsec-hd{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:600;
+       font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;margin:0 4px 8px}
+  .lsec-hd .ix{width:16px;height:16px;border-radius:50%;flex:none;display:flex;align-items:center;
+       justify-content:center;font-size:10px;font-weight:700;color:#fff}
+  .lsec-hd.pass{color:var(--ok)} .lsec-hd.pass .ix{background:var(--ok)}
+  .lsec-hd.fail{color:var(--warn)} .lsec-hd.fail .ix{background:var(--warn)}
+  .lrow{display:flex;align-items:flex-start;gap:10px;background:var(--card);border:1px solid var(--line);
+       border-radius:var(--r);padding:9px 11px;margin-bottom:6px}
+  .lrow .mk{flex:none;font-size:13px;font-weight:700;line-height:1.5;width:14px;text-align:center}
+  .lrow.pass .mk{color:var(--ok)} .lrow.fail .mk{color:var(--warn)}
+  .lrow .lg{flex:1;min-width:0}
+  .lrow .path{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--ink);word-break:break-all;line-height:1.45}
+  .lrow .verdict{font-size:11px;color:var(--muted);margin-top:2px}
+  .ldetail{margin-top:6px;background:rgba(0,0,0,.22);border-radius:8px;padding:7px 9px;
+       font-family:ui-monospace,monospace;font-size:10.5px;color:var(--faint);word-break:break-all;line-height:1.5}
+  .ldetail .k{color:var(--muted)}
+  .ldetail-toggle{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:10.5px;
+       color:var(--faint);background:none;border:0;padding:2px 0;margin-top:3px}
+  .ldetail-toggle:hover{color:var(--muted)}
+  .lempty{font-size:12px;color:var(--muted);line-height:1.5;background:var(--card);
+       border:1px solid var(--line);border-radius:var(--r);padding:11px 13px}
   /* privacy list */
   .sec{font-family:var(--font-display);font-weight:600;font-size:11.5px;letter-spacing:.04em;
        text-transform:uppercase;color:var(--faint);margin:18px 4px 9px}
@@ -124,6 +148,36 @@
     </div>
   </div>
 
+  <!-- Per-resource inclusion-proof LEDGER. A capsule is many resources, each
+       with its own Merkle inclusion proof the loader verified on this device
+       (fail-closed). This lists EVERY proof that passed and failed for this
+       capsule — building the mental model "capsule root → per-resource inclusion
+       proof". Plain check/✗ by default; the proof/root detail behind disclosure.
+       Only shown for a DIG (chia://) page; populated from the chia://shields-
+       ledger data feed the loader serves for the active tab. -->
+  <section id="ledger" class="ledger" data-testid="shields-ledger" role="region" aria-label="Per-resource inclusion proofs" hidden>
+    <div class="sec">Inclusion proofs &mdash; verified on this device</div>
+
+    <!-- Empty: a DIG page whose ledger has no entries yet (nothing recorded). -->
+    <div id="ledgerEmpty" class="lempty" data-testid="shields-ledger-empty" hidden>
+      No per-resource proofs recorded for this capsule yet.
+    </div>
+
+    <!-- Verified (N) -->
+    <div id="ledgerPassedSec" class="lsec" data-testid="shields-ledger-passed" hidden>
+      <div class="lsec-hd pass"><span class="ix" aria-hidden="true">&#10003;</span>
+        Verified (<span id="passedCount" data-testid="shields-ledger-passed-count">0</span>)</div>
+      <div id="ledgerPassedList" class="lsec-list" data-testid="shields-ledger-passed-list"></div>
+    </div>
+
+    <!-- Failed (M) -->
+    <div id="ledgerFailedSec" class="lsec" data-testid="shields-ledger-failed" hidden>
+      <div class="lsec-hd fail"><span class="ix" aria-hidden="true">&times;</span>
+        Failed (<span id="failedCount" data-testid="shields-ledger-failed-count">0</span>)</div>
+      <div id="ledgerFailedList" class="lsec-list" data-testid="shields-ledger-failed-list"></div>
+    </div>
+  </section>
+
   <!-- Privacy posture readout: browser-wide hardened defaults (not per-site
        toggles). This panel reports the posture; the controls live in settings. -->
   <div class="sec">Privacy posture &mdash; on for every page</div>
@@ -167,6 +221,10 @@
       docEl.setAttribute('data-dig-source', source);
       docEl.setAttribute('data-dig-host', host);
       docEl.setAttribute('data-dig-capsule', '');
+      // Ledger summary (per-resource inclusion-proof tally) exposed for agents
+      // up front; filled once the data feed is read below.
+      docEl.setAttribute('data-dig-ledger-passed', '0');
+      docEl.setAttribute('data-dig-ledger-failed', '0');
 
       var badge = document.getElementById('badge');
       var badgeText = document.getElementById('badgeText');
@@ -211,6 +269,141 @@
         capDetail.hidden = open;
       });
 
+      // ---- Per-resource inclusion-proof ledger -----------------------------
+      // groupLedger() is RESTATED VERBATIM from dig/shields/dig_ledger.mjs (this
+      // embedded page can't import the module). dig/shields/dig_shields.test.mjs
+      // extracts this copy and asserts it matches the module so the two never
+      // drift. Fail-closed: an entry without inclusionProofPassed === true is
+      // grouped as FAILED.
+      function groupLedger(entries) {
+        var list = Array.isArray(entries) ? entries : [];
+        var passed = [], failed = [];
+        for (var i = 0; i < list.length; i++) {
+          var e = list[i];
+          if (e && e.inclusionProofPassed === true) passed.push(e);
+          else failed.push(e);
+        }
+        var total = passed.length + failed.length;
+        return {
+          passed: passed, failed: failed,
+          passedCount: passed.length, failedCount: failed.length, total: total,
+          empty: total === 0,
+          allPassed: total > 0 && failed.length === 0,
+        };
+      }
+
+      var ledger = document.getElementById('ledger');
+      var ledgerEmpty = document.getElementById('ledgerEmpty');
+      var ledgerPassedSec = document.getElementById('ledgerPassedSec');
+      var ledgerFailedSec = document.getElementById('ledgerFailedSec');
+      var ledgerPassedList = document.getElementById('ledgerPassedList');
+      var ledgerFailedList = document.getElementById('ledgerFailedList');
+      var passedCount = document.getElementById('passedCount');
+      var failedCount = document.getElementById('failedCount');
+
+      // Render one ledger row. Plain check/✗ + the resource path by default; the
+      // proof root and (on failure) the catalogued DIG_ERR_* code behind a
+      // per-row disclosure — building the mental model capsule root → per-resource
+      // proof without forcing the protocol detail on everyone.
+      function renderRow(e, pass){
+        var row = document.createElement('div');
+        row.className = 'lrow ' + (pass ? 'pass' : 'fail');
+        row.setAttribute('data-testid', 'shields-ledger-row');
+        row.setAttribute('role', 'listitem');
+
+        var mk = document.createElement('div');
+        mk.className = 'mk'; mk.setAttribute('aria-hidden', 'true');
+        mk.innerHTML = pass ? '&#10003;' : '&times;';
+        row.appendChild(mk);
+
+        var lg = document.createElement('div'); lg.className = 'lg';
+        var p = document.createElement('div'); p.className = 'path';
+        p.setAttribute('data-testid', 'shields-ledger-path');
+        p.textContent = e.resourcePath || 'index.html';
+        lg.appendChild(p);
+        var v = document.createElement('div'); v.className = 'verdict';
+        v.textContent = pass ? 'Inclusion proof verified'
+          : 'Inclusion proof failed' + (e.errorCode ? ' — see detail' : '');
+        lg.appendChild(v);
+
+        // Disclosure: proof root + the failure code. Behind a button so the
+        // default view stays plain.
+        var detail = document.createElement('div');
+        detail.className = 'ldetail'; detail.hidden = true;
+        detail.setAttribute('data-testid', 'shields-ledger-detail');
+        var rootHex = e.rootHash || docEl.getAttribute('data-dig-capsule').split(':')[1] || 'latest';
+        var html = '<div><span class="k">capsule root</span> ' + esc(rootHex) + '</div>';
+        if (!pass && e.errorCode) {
+          detail.setAttribute('data-dig-error', e.errorCode);
+          html += '<div data-testid="shields-ledger-error-code"><span class="k">error</span> ' + esc(e.errorCode) + '</div>';
+        }
+        detail.innerHTML = html;
+
+        var toggle = document.createElement('button');
+        toggle.type = 'button'; toggle.className = 'ldetail-toggle';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.textContent = 'Proof detail';
+        toggle.addEventListener('click', function(){
+          var open = toggle.getAttribute('aria-expanded') === 'true';
+          toggle.setAttribute('aria-expanded', String(!open));
+          detail.hidden = open;
+        });
+        lg.appendChild(toggle);
+        lg.appendChild(detail);
+
+        row.appendChild(lg);
+        return row;
+      }
+
+      function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+      // Render the grouped ledger into the two sections, handling the empty /
+      // all-passed / some-failed states.
+      function renderLedger(entries){
+        var g = groupLedger(entries);
+        ledger.hidden = false;
+        docEl.setAttribute('data-dig-ledger-passed', String(g.passedCount));
+        docEl.setAttribute('data-dig-ledger-failed', String(g.failedCount));
+
+        if (g.empty) {
+          ledgerEmpty.hidden = false;
+          ledgerPassedSec.hidden = true;
+          ledgerFailedSec.hidden = true;
+          return;
+        }
+        ledgerEmpty.hidden = true;
+
+        passedCount.textContent = String(g.passedCount);
+        failedCount.textContent = String(g.failedCount);
+        ledgerPassedList.textContent = '';
+        ledgerFailedList.textContent = '';
+        for (var i = 0; i < g.passed.length; i++) ledgerPassedList.appendChild(renderRow(g.passed[i], true));
+        for (var j = 0; j < g.failed.length; j++) ledgerFailedList.appendChild(renderRow(g.failed[j], false));
+        // Show only the non-empty sections (all-passed → no Failed section).
+        ledgerPassedSec.hidden = g.passedCount === 0;
+        ledgerFailedSec.hidden = g.failedCount === 0;
+      }
+
+      // Read the per-tab/per-capsule ledger the loader accumulated, served as a
+      // JSON blob at chia://shields/ledger?host=<the same host this panel opened
+      // over>. SAME-ORIGIN with this page (a path under the shields host), so the
+      // fetch is never CORS-blocked. The verdict is computed in the loader; this
+      // page only lists it. On any fetch/parse failure, fail safe to the empty state.
+      function loadLedger(h){
+        var url = 'chia://shields/ledger?host=' + encodeURIComponent(h || '');
+        try {
+          fetch(url, { cache: 'no-store' })
+            .then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(data){
+              renderLedger(data && Array.isArray(data.entries) ? data.entries : []);
+            })
+            .catch(function(){ renderLedger([]); });
+        } catch (_) {
+          renderLedger([]);
+        }
+      }
+
       if (scheme === 'dig') {
         setBadge('dig', 'DIG Network page', 'ok');
         title.textContent = 'Verified DIG content';
@@ -227,6 +420,8 @@
           capsule.hidden = false; capId.textContent = cap;
           docEl.setAttribute('data-dig-capsule', cap);
         }
+        // Load + render the per-resource inclusion-proof ledger for THIS capsule.
+        loadLedger(host);
       } else if (scheme === 'internal') {
         setBadge('dig', 'DIG Browser', 'ok');
         title.textContent = 'A DIG Browser page';

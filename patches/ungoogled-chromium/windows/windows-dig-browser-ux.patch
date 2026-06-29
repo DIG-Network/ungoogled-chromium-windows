@@ -1135,7 +1135,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,1125 @@
+@@ -0,0 +1,1302 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1157,6 +1157,7 @@
 +#include <memory>
 +#include <optional>
 +#include <string>
++#include <string_view>
 +#include <utility>
 +#include <vector>
 +
@@ -1179,6 +1180,7 @@
 +#include "base/memory/scoped_refptr.h"
 +#include "base/memory/weak_ptr.h"
 +#include "base/strings/strcat.h"
++#include "base/strings/string_split.h"
 +#include "base/strings/string_util.h"
 +#include "base/values.h"
 +#include "content/public/browser/browser_context.h"
@@ -1230,6 +1232,143 @@
 +void PutCachedRoot(const std::string& store_id, const std::string& root) {
 +  base::AutoLock lock(RootCacheLock());
 +  RootCache()[store_id] = root;
++}
++
++// ---------------------------------------------------------------------------
++// Per-capsule inclusion-proof LEDGER (the chia://shields per-resource proof
++// list, feature #shields-ledger). As each chia:// resource is served + verified
++// by the loader (the verdict is ALREADY computed here, fail-closed), we record
++// {resourcePath, storeId, rootHash, inclusionProofPassed, errorCode} keyed by
++// the committed capsule (storeId:rootHash). The DIG identity panel
++// (chia://shields) reads this back via the same-origin chia://shields/ledger
++// ?host=… JSON blob and lists every proof that passed and failed. Process-global + lock-
++// guarded like RootCache (navigation + subresource loaders run on different
++// sequences). The PURE model — the capsule key, the entry shape, the per-
++// resource update-in-place, the cap, and the pass/fail grouping — is mirrored
++// from dig/shields/dig_ledger.mjs (which carries the Node tests for it) and the
++// page restates groupLedger() verbatim; change all three in lockstep.
++struct LedgerEntry {
++  std::string resource_path;
++  std::string store_id;
++  std::string root_hash;
++  bool inclusion_proof_passed = false;
++  std::string error_code;  // catalogued DIG_ERR_* on failure; "" on pass.
++};
++
++// Cap per-capsule entries so a long-lived tab can't grow the ledger without
++// bound. Most-recent kept (oldest evicted). Matches dig_ledger.mjs DEFAULT_MAX.
++constexpr size_t kLedgerMaxEntries = 256;
++
++// The canonical capsule key — storeId:rootHash (lowercased); a rootless/
++// unresolved root keys under "<storeId>:latest". Matches dig_ledger.mjs
++// capsuleKey() and the capsule string chia://shields already shows.
++std::string CapsuleKey(const std::string& store_id, const std::string& root) {
++  std::string s = base::ToLowerASCII(store_id);
++  std::string r = base::ToLowerASCII(root);
++  return s + ":" + ((!r.empty() && r != "latest") ? r : "latest");
++}
++
++base::Lock& LedgerLock() {
++  static base::NoDestructor<base::Lock> lock;
++  return *lock;
++}
++// capsule key -> ordered entries (one per resource_path; re-serving updates).
++std::map<std::string, std::vector<LedgerEntry>>& LedgerStore() {
++  static base::NoDestructor<std::map<std::string, std::vector<LedgerEntry>>> m;
++  return *m;
++}
++
++// Record (or update) one resource's verdict under its capsule. Idempotent per
++// resource_path: a re-fetch replaces the prior verdict rather than duplicating.
++void RecordLedgerEntry(const std::string& store_id,
++                       const std::string& root_hash,
++                       const std::string& resource_path,
++                       bool inclusion_proof_passed,
++                       const std::string& error_code) {
++  std::string rk = resource_path.empty() ? std::string("index.html")
++                                         : resource_path;
++  while (!rk.empty() && rk.front() == '/') {
++    rk.erase(rk.begin());
++  }
++  if (rk.empty()) {
++    rk = "index.html";
++  }
++  LedgerEntry entry;
++  entry.resource_path = rk;
++  entry.store_id = base::ToLowerASCII(store_id);
++  entry.root_hash = base::ToLowerASCII(root_hash);
++  entry.inclusion_proof_passed = inclusion_proof_passed;
++  entry.error_code = inclusion_proof_passed ? std::string() : error_code;
++
++  base::AutoLock lock(LedgerLock());
++  std::vector<LedgerEntry>& entries = LedgerStore()[CapsuleKey(store_id, root_hash)];
++  for (auto it = entries.begin(); it != entries.end(); ++it) {
++    if (it->resource_path == rk) {
++      entries.erase(it);  // move to most-recent on update
++      break;
++    }
++  }
++  entries.push_back(std::move(entry));
++  while (entries.size() > kLedgerMaxEntries) {
++    entries.erase(entries.begin());  // evict oldest
++  }
++}
++
++// Serialize a capsule's ledger to the JSON blob the shields page reads:
++//   {"capsule":"<store>:<root>","entries":[{resourcePath,storeId,rootHash,
++//     inclusionProofPassed,errorCode}, ...]}. `host` is the chia:// host the
++// panel opened over ([<root>.]<store_id>); an unknown/empty capsule yields an
++// empty entries list (the page renders its empty state).
++std::string LedgerBlobForHost(const std::string& host) {
++  std::string store_id;
++  std::string root_hash;  // "" => latest
++  size_t dot = host.find('.');
++  if (dot != std::string::npos) {
++    root_hash = base::ToLowerASCII(host.substr(0, dot));
++    store_id = base::ToLowerASCII(host.substr(dot + 1));
++  } else {
++    store_id = base::ToLowerASCII(host);
++  }
++  std::string key = CapsuleKey(store_id, root_hash);
++
++  base::ListValue entries_json;
++  {
++    base::AutoLock lock(LedgerLock());
++    auto it = LedgerStore().find(key);
++    // A rootless host (panel opened over chia://<store>/, no root prefix) keys
++    // "<store>:latest", but the loader recorded under the RESOLVED tip root
++    // "<store>:<root>". So when the host carried no explicit root, fall back to
++    // the one capsule recorded for this store id this session (RootCache resolves
++    // a single tip per store), matching user intent "this store's proofs".
++    if (it == LedgerStore().end() && root_hash.empty()) {
++      const std::string prefix = base::ToLowerASCII(store_id) + ":";
++      for (auto cand = LedgerStore().begin(); cand != LedgerStore().end();
++           ++cand) {
++        if (cand->first.compare(0, prefix.size(), prefix) == 0) {
++          it = cand;
++          key = cand->first;
++          break;
++        }
++      }
++    }
++    if (it != LedgerStore().end()) {
++      for (const LedgerEntry& e : it->second) {
++        base::DictValue d;
++        d.Set("resourcePath", e.resource_path);
++        d.Set("storeId", e.store_id);
++        d.Set("rootHash", e.root_hash);
++        d.Set("inclusionProofPassed", e.inclusion_proof_passed);
++        d.Set("errorCode", e.error_code);
++        entries_json.Append(std::move(d));
++      }
++    }
++  }
++  base::DictValue blob;
++  blob.Set("capsule", key);
++  blob.Set("entries", std::move(entries_json));
++  std::string out;
++  base::JSONWriter::Write(base::Value(std::move(blob)), &out);
++  return out;
 +}
 +
 +// Runs the `dig-resolver` sidecar (shipped next to the browser executable) to
@@ -1776,6 +1915,31 @@
 +    // the toolbar button from the active tab) to reflect the page it opened
 +    // over. No resolve/verify/decrypt — this is a local UI surface.
 +    if (url.host() == "shields") {
++      // chia://shields/ledger is the per-capsule inclusion-proof LEDGER data
++      // feed the panel reads (SAME-ORIGIN with the page, so the fetch is never
++      // CORS-blocked — it's a path under the shields host, not a separate host).
++      // It returns the JSON blob {"capsule":..,"entries":[{resourcePath,storeId,
++      // rootHash,inclusionProofPassed,errorCode},..]} for the ?host= capsule the
++      // panel opened over — a browser-side per-tab accumulator (RecordLedgerEntry
++      // / LedgerBlobForHost). An unknown capsule yields an empty entries list →
++      // the page renders its empty state.
++      if (url.path() == "/ledger") {
++        std::string want_host;
++        for (const auto& kv : base::SplitStringPiece(
++                 url.query(), "&", base::TRIM_WHITESPACE,
++                 base::SPLIT_WANT_NONEMPTY)) {
++          size_t eq = kv.find('=');
++          if (eq != std::string_view::npos && kv.substr(0, eq) == "host") {
++            want_host = base::ToLowerASCII(std::string(kv.substr(eq + 1)));
++            break;
++          }
++        }
++        output_ = LedgerBlobForHost(want_host);
++        mime_type_ = "application/json";
++        verified_ = false;  // a local data feed, not chain-verified content
++        SendResponse();
++        return;
++      }
 +      output_ = kDigShieldsHtml;
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
@@ -2066,6 +2230,10 @@
 +          dig_err::kProofMismatch);
 +      return;
 +    }
++    // Record this resource's PASSED inclusion proof in the per-capsule ledger
++    // (chia://shields lists it). Done here, after VerifyInclusion succeeded.
++    RecordLedgerEntry(parsed_.store_id, root_, resource_key_,
++                      /*inclusion_proof_passed=*/true, /*error_code=*/"");
 +
 +    const std::string canonical_urn = net::dig::CanonicalRootlessUrn(
 +        chain_, parsed_.store_id, parsed_.resource_key);
@@ -2090,6 +2258,15 @@
 +  }
 +
 +  void FinishWithError(const std::string& message, const std::string& code) {
++    // Record the FAILED inclusion proof in the per-capsule ledger so
++    // chia://shields lists it (with its catalogued DIG_ERR_* code) — but only
++    // when we were actually resolving a store resource (parsed_.valid). The
++    // internal-page / redirect paths also call FinishWithError-style flows but
++    // set no parsed_ URN, so they never pollute the ledger.
++    if (parsed_.valid && !retrieval_key_.empty()) {
++      RecordLedgerEntry(parsed_.store_id, root_, resource_key_,
++                        /*inclusion_proof_passed=*/false, /*error_code=*/code);
++    }
 +    output_ = ErrorPageHtml(message, code);
 +    mime_type_ = "text/html";
 +    verified_ = false;

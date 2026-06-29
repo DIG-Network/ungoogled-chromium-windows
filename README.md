@@ -99,8 +99,14 @@ cap), **§21 sync** status, and the **upstream** it fetches from. It drives the
 node's `control.*` admin RPCs over loopback only.
 
 - **Hidden when you have no local node.** Consumption never needs one, so with no
-  node present the page just explains that and links to install dig-node — nothing
-  to manage.
+  node present the page shows a **calm, dismissible nudge** instead of an empty
+  controller: it says the browser already works fully on its own (in-process node
+  + `rpc.dig.net`, nothing to install to browse), then invites installing a
+  **standalone dig-node** to run a full node, contribute to the network, share
+  your `.dig` cache, and unlock this My Node controller. The **Install dig-node**
+  link points at the [`dig-installer` releases](https://github.com/DIG-Network/dig-installer/releases)
+  (the same target the `dig-chrome-extension` uses). Never alarmist; dismissing it
+  is remembered (localStorage), and "Check again" re-engages.
 - **Loopback-gated by a control token.** The node writes a secret token to
   `<config_dir>/control-token`; every `control.*` call carries it in the
   `X-Dig-Control-Token` header. The browser reads the token on this device and
@@ -155,6 +161,36 @@ byte-identical to the `dig_client` WASM the rest of the ecosystem shares. Changi
 the URN scheme, retrieval key, Merkle tags, or HKDF/AES parameters here **must**
 be coordinated with the other modules per `SYSTEM.md`.
 
+### DIG identity panel — `chia://shields` (the per-resource proof ledger)
+
+The signature DIG-identity toolbar button (next to the wallet button) opens the
+**DIG identity panel** — `chia://shields`, the Brave-Shields analogue. Besides the
+aggregate verified badge, served-locally state, the capsule (`storeId:rootHash`)
+disclosure, and the privacy posture, it lists the **per-resource inclusion-proof
+LEDGER** for the page's capsule:
+
+- Every resource the loader served + verified for this capsule is recorded —
+  `{resourcePath, storeId, rootHash, inclusionProofPassed, errorCode}` — keyed by
+  the committed capsule. The verdict is computed **once, in the loader** (the same
+  fail-closed Merkle verification above); the panel only lists it.
+- The panel renders two sections — **Verified (N)** and **Failed (M)** — each a
+  list of resource paths with a plain check/✗. The **proof root** and (on a
+  failure) the catalogued `DIG_ERR_*` code sit behind a per-row **Proof detail**
+  disclosure, so the default view stays plain while building the mental model
+  *capsule root → per-resource inclusion proof*. Empty / all-passed / some-failed
+  states are each handled.
+- **How it's wired.** The loader keeps a process-global, per-capsule accumulator
+  (`RecordLedgerEntry` in `dig_url_loader_factory.cc`) and serves it back to the
+  panel as a same-origin JSON blob at **`chia://shields/ledger?host=…`** (a path
+  under the `shields` host, so the panel's `fetch().json()` is never CORS-blocked).
+  The pure model — the capsule key, the entry shape, the pass/fail grouping —
+  lives in [`dig/shields/dig_ledger.mjs`](dig/shields/dig_ledger.mjs) with a Node
+  test harness; the page restates `groupLedger()` verbatim and
+  `dig/shields/dig_shields.test.mjs` guards the two against drift.
+- The panel exposes the tally as document `data-dig-ledger-passed` /
+  `data-dig-ledger-failed` so an agent reads the per-capsule verdict without
+  scraping the list.
+
 ## Agent / programmatic surface
 
 DIG Browser is self-describing so an agent or dapp can introspect it without
@@ -187,7 +223,9 @@ out-of-band knowledge:
   `welcome`, `shields`, `node`) carry stable `data-testid` hooks and ARIA
   landmarks; `chia://shields` exposes the active page's verification verdict as
   document `data-dig-scheme` / `data-dig-verified` / `data-dig-source` /
-  `data-dig-capsule` attributes, `chia://node` exposes its controller posture as
+  `data-dig-capsule` attributes plus the per-resource proof tally as
+  `data-dig-ledger-passed` / `data-dig-ledger-failed` (the ledger feed itself is
+  `chia://shields/ledger?host=…`), `chia://node` exposes its controller posture as
   `data-dig-node` (`no-node` / `needs-token` / `ready`), and the My Node Publish
   panel exposes the deploy posture as `data-dig-deploy`
   (`idle`…`done`/`error`) plus `data-dig-deploy-error` (a stable `DIG_ERR_*` code).
@@ -195,8 +233,9 @@ out-of-band knowledge:
 The pure JS surfaces have Node test harnesses (no Chromium build needed) under
 `dig/`: `dig/provider/dig_provider.test.mjs`, `dig/dig_surfaces.test.mjs`,
 `dig/newtab/dig_newtab.test.mjs`, `dig/node/dig_source_resolution.test.mjs`,
-`dig/node/dig_node_controller.test.mjs`, `dig/node/dig_deploy_flow.test.mjs`, and
-`dig/node/dig_node.test.mjs`.
+`dig/node/dig_node_controller.test.mjs`, `dig/node/dig_deploy_flow.test.mjs`,
+`dig/node/dig_node.test.mjs`, `dig/shields/dig_ledger.test.mjs`, and
+`dig/shields/dig_shields.test.mjs`.
 `devutils/validate_patch_hunks.py` checks that the hand-edited `.patch` hunk
 headers stay internally consistent.
 
