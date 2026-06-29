@@ -54,12 +54,16 @@
 </style>
 </head>
 <body>
-  <div class="card">
+  <main class="card" data-testid="about-page" role="document" aria-labelledby="aboutTitle">
     <img class="logo" src="dig_logo_256.png" alt="DIG Browser">
-    <h1>About <span class="n">DIG&nbsp;Browser</span></h1>
+    <h1 id="aboutTitle">About <span class="n">DIG&nbsp;Browser</span></h1>
     <p class="tag">A browser built on the DIG Network &mdash; the unstoppable web. Open <b>chia://</b> apps and stores by their address, with the DIG Wallet and private-by-default browsing built in.</p>
 
-    <div class="ver">
+    <!-- Version surface. The VERSION token below is filled at request time by
+         the C++ chia:// loader (version_info::GetVersionNumber, replace-all);
+         the data-dig-version attribute carries the same value so an agent can
+         read the build without scraping the visible text. -->
+    <div class="ver" data-testid="about-version" data-dig-version="{{VERSION}}">
       <span class="dot"></span>DIG&nbsp;Browser
       <span class="v">{{VERSION}}</span>
     </div>
@@ -82,14 +86,14 @@
       </div>
     </div>
 
-    <nav class="links">
-      <a href="https://dig.net">DIG Network</a>
-      <a href="https://hub.dig.net">DIGHUb</a>
-      <a href="https://docs.dig.net">Docs</a>
-      <a href="chia://welcome">Welcome tour</a>
+    <nav class="links" aria-label="DIG Network links">
+      <a href="https://dig.net" data-testid="about-link-network">DIG Network</a>
+      <a href="https://hub.dig.net" data-testid="about-link-hub">DIGHUb</a>
+      <a href="https://docs.dig.net" data-testid="about-link-docs">Docs</a>
+      <a href="chia://welcome" data-testid="about-link-welcome">Welcome tour</a>
     </nav>
 
     <p class="copy"><span class="leaf">Built on Chia</span> &middot; The DIG Network &middot; based on Chromium</p>
-  </div>
+  </main>
 </body>
 </html>

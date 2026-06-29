@@ -1135,7 +1135,7 @@
 +#endif  // CHROME_BROWSER_DIG_DIG_URL_LOADER_FACTORY_H_
 --- /dev/null
 +++ b/chrome/browser/dig/dig_url_loader_factory.cc
-@@ -0,0 +1,750 @@
+@@ -0,0 +1,785 @@
 +// Copyright (c) 2026 The DIG Network Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1300,13 +1300,29 @@
 +  return "application/octet-stream";
 +}
 +
++// Stable, machine-readable dig:// loader failure codes. These mirror the
++// docs.dig.net cross-surface catalogue (static/error-codes.json → "dig-loader")
++// so an agent can branch on the cause (tamper vs wrong-key vs miss vs network)
++// instead of string-matching the human message. Surfaced on the branded error
++// page below as <meta name="dig-error-code"> + a data-dig-error body attribute.
++namespace dig_err {
++inline constexpr char kProofMismatch[] = "DIG_ERR_PROOF_MISMATCH";
++inline constexpr char kDecryptTag[] = "DIG_ERR_DECRYPT_TAG";
++inline constexpr char kNotFound[] = "DIG_ERR_NOT_FOUND";
++inline constexpr char kNetwork[] = "DIG_ERR_NETWORK";
++}  // namespace dig_err
++
 +// Branded DIG error page (clean, brand-purple). Shown on any resolution or
 +// verification failure — content is NEVER shown unless it verifies and
-+// decrypts. Mirrors net/url_request/dig_protocol_handler.cc ErrorPageHtml.
-+std::string ErrorPageHtml(const std::string& message) {
++// decrypts. `code` is one of dig_err::k* and is emitted in a machine-readable
++// form (a <meta name="dig-error-code"> tag in the head + a data-dig-error
++// attribute on <body>) so an agent can read the failure class without scraping
++// the human prose. Mirrors net/url_request/dig_protocol_handler.cc ErrorPageHtml.
++std::string ErrorPageHtml(const std::string& message, const std::string& code) {
 +  return base::StrCat({
 +      "<!doctype html><html><head><meta charset=\"utf-8\">"
 +      "<meta name=\"color-scheme\" content=\"dark light\">"
++      "<meta name=\"dig-error-code\" content=\"", code, "\">"
 +      "<title>DIG Network</title><style>"
 +      ":root{color-scheme:dark light}"
 +      "html,body{height:100%;margin:0}"
@@ -1324,11 +1340,11 @@
 +      "p{font-size:15px;line-height:1.6;color:#B9AFD6;margin:0}"
 +      ".u{margin-top:18px;font-size:12px;color:#7C6FA6;"
 +      "word-break:break-all;font-family:ui-monospace,monospace}"
-+      "</style></head><body><div class=\"card\">"
++      "</style></head><body data-dig-error=\"", code, "\"><div class=\"card\">"
 +      "<div class=\"d\">D</div>"
 +      "<h1>Couldn&rsquo;t load this DIG resource</h1>"
 +      "<p>", message, "</p>"
-+      "<div class=\"u\">chia://</div>"
++      "<div class=\"u\">", code, "</div>"
 +      "</div></body></html>"});
 +}
 +
@@ -1403,13 +1419,13 @@
 +    // chia://about is the DIG Browser's branded "About DIG Browser" surface
 +    // (product name, the live browser version, tagline, logo, and the signature
 +    // DIG features). A trusted browser-internal page embedded in the binary —
-+    // served directly, with the {{VERSION}} placeholder filled from
-+    // version_info so the page always shows the running build.
++    // served directly, with EVERY {{VERSION}} placeholder filled from
++    // version_info so the page always shows the running build (the visible
++    // version text AND the machine-readable data-dig-version attribute).
 +    if (url.host() == "about") {
 +      output_ = kDigAboutHtml;
 +      const std::string version(version_info::GetVersionNumber());
-+      base::ReplaceFirstSubstringAfterOffset(&output_, 0, "{{VERSION}}",
-+                                             version);
++      base::ReplaceSubstringsAfterOffset(&output_, 0, "{{VERSION}}", version);
 +      mime_type_ = "text/html";
 +      verified_ = false;  // a local page, not chain-verified content
 +      SendResponse();
@@ -1478,7 +1494,8 @@
 +                                        std::string(url.path()),
 +                                        std::string(url.query()));
 +    if (!parsed_.valid) {
-+      FinishWithError("That chia:// address isn't a valid DIG URN.");
++      FinishWithError("That chia:// address isn't a valid DIG URN.",
++                      dig_err::kNotFound);
 +      return;
 +    }
 +    chain_ = parsed_.chain.empty() ? "chia" : parsed_.chain;
@@ -1563,7 +1580,8 @@
 +    if (!root) {
 +      FinishWithError(
 +          "Couldn't resolve this store's latest root from the chain "
-+          "(coinset.org). Try again, or put an explicit root in the URL.");
++          "(coinset.org). Try again, or put an explicit root in the URL.",
++          dig_err::kNetwork);
 +      return;
 +    }
 +    PutCachedRoot(parsed_.store_id, *root);
@@ -1601,7 +1619,8 @@
 +
 +  void OnRpcWindowDownloaded(std::string response_body) {
 +    if (response_body.empty()) {
-+      FinishWithError("Couldn't reach the DIG content network.");
++      FinishWithError("Couldn't reach the DIG content network.",
++                      dig_err::kNetwork);
 +      return;
 +    }
 +    rpc_body_ = std::move(response_body);
@@ -1612,18 +1631,21 @@
 +    std::optional<base::Value> parsed =
 +        base::JSONReader::Read(rpc_body_, base::JSON_PARSE_RFC);
 +    if (!parsed || !parsed->is_dict()) {
-+      FinishWithError("DIG RPC returned a malformed response.");
++      FinishWithError("DIG RPC returned a malformed response.",
++                      dig_err::kNetwork);
 +      return;
 +    }
 +    const base::DictValue& root = parsed->GetDict();
 +    if (const base::DictValue* err = root.FindDict("error")) {
 +      const std::string* msg = err->FindString("message");
-+      FinishWithError(msg ? *msg : "DIG RPC error.");
++      // An RPC error envelope is the node declining to serve — a blind miss /
++      // decoy at this retrieval key under this generation.
++      FinishWithError(msg ? *msg : "DIG RPC error.", dig_err::kNotFound);
 +      return;
 +    }
 +    const base::DictValue* result = root.FindDict("result");
 +    if (!result) {
-+      FinishWithError("DIG RPC returned no data.");
++      FinishWithError("DIG RPC returned no data.", dig_err::kNotFound);
 +      return;
 +    }
 +
@@ -1637,7 +1659,8 @@
 +    if (total_length_ < 0) {
 +      std::optional<double> total = result->FindDouble("total_length");
 +      if (!total || *total < 0 || *total > kMaxResourceBytes) {
-+        FinishWithError("DIG resource is missing or too large.");
++        FinishWithError("DIG resource is missing or too large.",
++                        dig_err::kNotFound);
 +        return;
 +      }
 +      total_length_ = static_cast<int64_t>(*total);
@@ -1658,7 +1681,8 @@
 +    if (ct_b64 && !ct_b64->empty()) {
 +      std::string decoded;
 +      if (!base::Base64Decode(*ct_b64, &decoded)) {
-+        FinishWithError("DIG RPC returned malformed ciphertext.");
++        FinishWithError("DIG RPC returned malformed ciphertext.",
++                        dig_err::kNetwork);
 +        return;
 +      }
 +      int64_t at = static_cast<int64_t>(result->FindDouble("offset").value_or(
@@ -1697,7 +1721,8 @@
 +    if (!verified_) {
 +      FinishWithError(
 +          "DIG content failed its on-chain integrity check (Merkle proof). "
-+          "It may be tampered or a decoy.");
++          "It may be tampered or a decoy.",
++          dig_err::kProofMismatch);
 +      return;
 +    }
 +
@@ -1705,14 +1730,16 @@
 +        chain_, parsed_.store_id, parsed_.resource_key);
 +    uint8_t key[32];
 +    if (!net::dig::DeriveContentKey(canonical_urn, parsed_.salt, key)) {
-+      FinishWithError("DIG content key could not be derived.");
++      FinishWithError("DIG content key could not be derived.",
++                      dig_err::kDecryptTag);
 +      return;
 +    }
 +
 +    std::vector<uint8_t> plaintext;
 +    if (!net::dig::DecryptResource(key, ciphertext_, chunk_lens_, &plaintext)) {
 +      FinishWithError(
-+          "DIG content could not be decrypted (decoy, wrong key, or tamper).");
++          "DIG content could not be decrypted (decoy, wrong key, or tamper).",
++          dig_err::kDecryptTag);
 +      return;
 +    }
 +
@@ -1721,10 +1748,11 @@
 +    SendResponse();
 +  }
 +
-+  void FinishWithError(const std::string& message) {
-+    output_ = ErrorPageHtml(message);
++  void FinishWithError(const std::string& message, const std::string& code) {
++    output_ = ErrorPageHtml(message, code);
 +    mime_type_ = "text/html";
 +    verified_ = false;
++    error_code_ = code;
 +    SendResponse();
 +  }
 +
@@ -1738,10 +1766,14 @@
 +    auto head = network::mojom::URLResponseHead::New();
 +    head->mime_type = mime_type_;
 +    head->content_length = static_cast<int64_t>(output_.size());
++    // X-Dig-Error carries the stable failure code (one of dig_err::k*) on the
++    // error path, so an agent can branch on the cause from the response headers
++    // without parsing the branded page. Empty on the success path.
 +    std::string raw_headers =
 +        base::StrCat({"HTTP/1.1 200 OK\r\nContent-Type: ", mime_type_,
 +                      "\r\nX-Dig-Verified: ", verified_ ? "true" : "false",
 +                      "\r\nX-Dig-Source: ", source_.empty() ? "remote" : source_,
++                      "\r\nX-Dig-Error: ", error_code_,
 +                      "\r\n\r\n"});
 +    head->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
 +        net::HttpUtil::AssembleRawHeaders(raw_headers));
@@ -1842,6 +1874,9 @@
 +  // "local" (served from this device's DIG cache) or "remote"/"" (from
 +  // rpc.dig.net). Emitted as the X-Dig-Source header → the omnibox "local" chip.
 +  std::string source_;
++  // Stable dig:// failure code (one of dig_err::k*) on the error path; emitted
++  // as the X-Dig-Error header and on the error page. Empty on success.
++  std::string error_code_;
 +  std::unique_ptr<mojo::DataPipeProducer> data_producer_;
 +
 +  base::WeakPtrFactory<DigURLLoader> weak_factory_{this};
