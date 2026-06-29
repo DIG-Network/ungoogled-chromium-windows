@@ -30,6 +30,27 @@ _ROOT_DIR = Path(__file__).resolve().parent
 _PATCH_BIN_RELPATH = Path('third_party/git/usr/bin/patch.exe')
 
 
+def _dig_browser_version():
+    """Resolve the DIG Browser build version string for the agent-facing surfaces.
+
+    Used to fill the `{{VERSION}}` token in the injected window.chia provider
+    (dig/provider/dig_provider.js) so `window.chia.version` reports the real
+    build, matching the runtime-substituted chia://about version (the C++ loader
+    fills the about page's {{VERSION}} from version_info at request time; the
+    provider JS is compiled into the renderer with no runtime hook, so it must be
+    substituted here at build time). Single source of truth: the same
+    `ungoogled-chromium/chromium_version.txt` the build is anchored on.
+    Best-effort: returns "0.0.0-dev" if the file is missing/unreadable so the
+    build never fails on a version lookup.
+    """
+    ver_file = _ROOT_DIR / 'ungoogled-chromium' / 'chromium_version.txt'
+    try:
+        v = ver_file.read_text(encoding=ENCODING).strip()
+        return v or '0.0.0-dev'
+    except Exception:  # noqa: BLE001 — best-effort version lookup
+        return '0.0.0-dev'
+
+
 def _apply_dig_branding(source_tree):
     """Overlay the DIG Browser binary brand assets onto the Chromium tree.
 
@@ -194,6 +215,11 @@ def _apply_dig_branding(source_tree):
     if provider_src.exists():
         try:
             provider_js = provider_src.read_text(encoding=ENCODING)
+            # Fill the {{VERSION}} token so window.chia.version reports the real
+            # build (the provider is compiled into the renderer — no runtime
+            # substitution hook like the C++-served about page has).
+            provider_js = provider_js.replace('{{VERSION}}',
+                                              _dig_browser_version())
             inc = ('// Generated from dig/provider/dig_provider.js by build.py. '
                    'Do not edit.\n'
                    'inline constexpr char kDigProviderJs[] = R"DIGJS('
