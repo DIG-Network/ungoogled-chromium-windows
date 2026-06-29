@@ -17,6 +17,8 @@ import {
   capsuleKey,
   LedgerStore,
   groupLedger,
+  inclusionProofDisplay,
+  executionProofDisplay,
 } from "./dig_ledger.mjs";
 
 const STORE = "1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907";
@@ -116,4 +118,84 @@ test("groupLedger does not mutate its input and tolerates missing fields", () =>
   assert.equal(g.failedCount, 1, "an entry without a positive pass verdict counts as failed (fail-closed)");
   assert.equal(g.passedCount, 0);
   assert.equal(entries.length, 1, "input untouched");
+});
+
+// ---- #134: per-resource INCLUSION-PROOF detail (root + verified-against-root) --
+
+test("inclusionProofDisplay: a passed entry is verified against its on-chain proof root", () => {
+  const d = inclusionProofDisplay({ inclusionProofPassed: true, rootHash: ROOT, storeId: STORE });
+  assert.equal(d.verified, true);
+  assert.equal(d.proofRoot, ROOT, "surfaces the capsule root the leaf was proven against");
+  assert.equal(d.hasRoot, true);
+  // the label is the plain 'verified against on-chain root' indicator (jargon on expand only).
+  assert.match(d.label, /verified/i);
+});
+
+test("inclusionProofDisplay: a failed entry is NOT verified (fail-closed) and carries its error code", () => {
+  const d = inclusionProofDisplay({
+    inclusionProofPassed: false,
+    rootHash: ROOT,
+    errorCode: "DIG_ERR_PROOF_MISMATCH",
+  });
+  assert.equal(d.verified, false);
+  assert.equal(d.errorCode, "DIG_ERR_PROOF_MISMATCH");
+  // a failed proof still knows which root it was checked against (useful detail).
+  assert.equal(d.proofRoot, ROOT);
+});
+
+test("inclusionProofDisplay: a rootless entry surfaces 'latest' and is honest that no pinned root is shown", () => {
+  const d = inclusionProofDisplay({ inclusionProofPassed: true, rootHash: "" });
+  // verified can still be true (the loader verified against the resolved tip),
+  // but hasRoot is false — we must NOT print a fake 64-hex root we don't have.
+  assert.equal(d.hasRoot, false);
+  assert.equal(d.proofRoot, "latest");
+});
+
+// ---- #134: per-resource EXECUTION-PROOF status — HONEST about mock/absent ------
+
+test("executionProofDisplay: a REAL succeeded receipt is the only state shown as verified", () => {
+  for (const s of ["succeeded", "verified"]) {
+    const d = executionProofDisplay({ executionProofStatus: s });
+    assert.equal(d.verified, true, `'${s}' is a real verified execution proof`);
+    assert.equal(d.state, "verified");
+    assert.match(d.label, /execution proof.*verified/i);
+  }
+});
+
+test("executionProofDisplay: a MOCK proof is NEVER green-checked (honesty rule)", () => {
+  const d = executionProofDisplay({ executionProofStatus: "mock" });
+  assert.equal(d.verified, false, "a mock execution proof must NEVER show as verified");
+  assert.equal(d.state, "mock");
+  // the label must say it is a mock / not a real attestation — not 'verified'.
+  assert.match(d.label, /mock|not a real|not verified/i);
+  assert.doesNotMatch(d.label, /^execution proof: verified$/i);
+});
+
+test("executionProofDisplay: pending states (running/queued/control-plane) are honest, not verified", () => {
+  for (const s of ["running", "queued", "request_via_control_plane"]) {
+    const d = executionProofDisplay({ executionProofStatus: s });
+    assert.equal(d.verified, false, `'${s}' is not (yet) a verified proof`);
+    assert.equal(d.state, "pending");
+    assert.match(d.label, /pending|not yet|requested|progress/i);
+  }
+});
+
+test("executionProofDisplay: failed/not_found are an honest 'not provided', never verified", () => {
+  for (const s of ["failed", "not_found"]) {
+    const d = executionProofDisplay({ executionProofStatus: s });
+    assert.equal(d.verified, false);
+    assert.equal(d.state, "absent");
+  }
+});
+
+test("executionProofDisplay: ABSENT/UNKNOWN is the honest default when the loader provided nothing", () => {
+  // The browser loader fetches dig.getContent (inclusion only); it does NOT call
+  // dig.getProof, so today there is NO execution-proof field. The default must be
+  // an honest 'not provided / unknown' — NEVER a green check.
+  for (const e of [{}, { executionProofStatus: "" }, { executionProofStatus: undefined }, null]) {
+    const d = executionProofDisplay(e);
+    assert.equal(d.verified, false, "absent execution proof is NEVER verified");
+    assert.equal(d.state, "unknown");
+    assert.match(d.label, /not provided|unknown|none/i);
+  }
 });

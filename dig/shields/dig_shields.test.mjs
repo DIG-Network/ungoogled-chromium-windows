@@ -42,8 +42,17 @@ function extractFn(name) {
 }
 
 const src =
-  extractFn("groupLedger") + "\n" + "export {groupLedger};";
+  extractFn("groupLedger") + "\n" +
+  // isHex64Root is the dependency the page's inclusionProofDisplay calls; extract
+  // it too or the restated copy throws ReferenceError when exercised here.
+  extractFn("isHex64Root") + "\n" +
+  extractFn("inclusionProofDisplay") + "\n" +
+  extractFn("executionProofDisplay") + "\n" +
+  "export {groupLedger, inclusionProofDisplay, executionProofDisplay};";
 const page = await import("data:text/javascript," + encodeURIComponent(src));
+
+const ROOT = "cc77916250e587e9d39d9fca59afdaf1bce89aa26c4d56249b2c14406dda8e4e";
+const STORE = "1426d9064bb59353e2ad3845c1d250af1f75476a6d4d85f2c4d6b90696359907";
 
 // ---- 1. the page's restated groupLedger matches the module contract ---------
 
@@ -122,4 +131,63 @@ test("shields ledger rows surface the proof/root detail behind disclosure", () =
   // progressive disclosure: a plain check/cross by default, the proof/root detail
   // (the catalogued DIG_ERR_* on failures, the capsule root) on demand.
   assert.match(html, /DIG_ERR_|errorCode|error-code/i, "catalogued error code surfaced on failures");
+});
+
+// ---- #134: the page's restated proof-display helpers match the module --------
+
+test("page inclusionProofDisplay matches the module (root + verified-against-root)", () => {
+  const passed = { inclusionProofPassed: true, rootHash: ROOT, storeId: STORE };
+  const a = page.inclusionProofDisplay(passed);
+  const b = mod.inclusionProofDisplay(passed);
+  assert.deepEqual(a, b, "page copy must match the module byte-for-byte in behaviour");
+  assert.equal(a.verified, true);
+  assert.equal(a.proofRoot, ROOT);
+  assert.equal(a.hasRoot, true);
+  // rootless: both must honestly report 'latest' / hasRoot:false (no fake root).
+  const rootless = { inclusionProofPassed: true, rootHash: "" };
+  assert.deepEqual(page.inclusionProofDisplay(rootless), mod.inclusionProofDisplay(rootless));
+  assert.equal(page.inclusionProofDisplay(rootless).hasRoot, false);
+});
+
+test("page executionProofDisplay matches the module AND keeps the mock honesty rule", () => {
+  for (const s of ["succeeded", "mock", "running", "queued", "not_found", "", "request_via_control_plane"]) {
+    const e = { executionProofStatus: s };
+    assert.deepEqual(page.executionProofDisplay(e), mod.executionProofDisplay(e), `status '${s}' diverged`);
+  }
+  // the load-bearing invariant, asserted on the PAGE copy: a mock is NEVER verified.
+  assert.equal(page.executionProofDisplay({ executionProofStatus: "mock" }).verified, false);
+  // and only a real terminal receipt is verified.
+  assert.equal(page.executionProofDisplay({ executionProofStatus: "succeeded" }).verified, true);
+  // absent (the loader's default today) is the honest 'not provided', not verified.
+  assert.equal(page.executionProofDisplay({}).verified, false);
+  assert.equal(page.executionProofDisplay({}).state, "unknown");
+});
+
+// ---- #134: the proof-display UI affordances are present ----------------------
+
+test("shields rows surface the INCLUSION proof root + a 'verified against on-chain root' indicator", () => {
+  // the per-row detail shows the capsule/proof root it was verified against...
+  assert.match(html, /capsule root|proof root|on-chain root/i, "proof root surfaced per row");
+  // ...and the plain 'verified against on-chain root' indicator is in the source.
+  assert.match(html, /verified against on-chain root/i, "the verified-against-root indicator");
+  // an agent reads the per-row proof state without scraping prose.
+  assert.match(html, /data-dig-proof-root/i, "proof root exposed as a data-* attribute");
+});
+
+test("shields surfaces the EXECUTION-proof status per resource, HONESTLY (no green-checked mock)", () => {
+  // an execution-proof status line/row exists with a stable testid. The exec
+  // row is created per-resource at render time, so the testid is set via
+  // setAttribute('data-testid','…') rather than as a static attribute — accept
+  // either form so the assertion guards presence, not a particular syntax.
+  assert.match(
+    html,
+    /data-testid=["']shields-ledger-exec["']|['"]data-testid['"]\s*,\s*['"]shields-ledger-exec['"]/,
+    "per-resource execution-proof status surface",
+  );
+  // the honest copy is present in the source: the default 'not provided' + the
+  // 'mock (not a real attestation)' state. The page must be able to say these.
+  assert.match(html, /not provided/i, "honest 'not provided' state for absent execution proofs");
+  assert.match(html, /mock.*not a real attestation|not a real attestation/i, "honest mock state");
+  // the execution-proof state is exposed as a data-* attribute for agents.
+  assert.match(html, /data-dig-exec-proof/i, "execution-proof state exposed as a data-* attribute");
 });

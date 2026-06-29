@@ -81,9 +81,17 @@
   .ldetail{margin-top:6px;background:rgba(0,0,0,.22);border-radius:8px;padding:7px 9px;
        font-family:ui-monospace,monospace;font-size:10.5px;color:var(--faint);word-break:break-all;line-height:1.5}
   .ldetail .k{color:var(--muted)}
+  .ldetail-why{font-family:var(--font-body);color:var(--muted);margin-top:4px;line-height:1.45}
   .ldetail-toggle{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:10.5px;
        color:var(--faint);background:none;border:0;padding:2px 0;margin-top:3px}
   .ldetail-toggle:hover{color:var(--muted)}
+  /* per-resource execution-proof status — HONEST: a mock/absent/pending proof is
+     muted (never the green 'ok' used for a real verified proof). */
+  .exec{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--faint);margin-top:3px}
+  .exec .exec-dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--faint)}
+  .exec.exec-verified{color:var(--ok)} .exec.exec-verified .exec-dot{background:var(--ok)}
+  .exec.exec-pending{color:var(--warn)} .exec.exec-pending .exec-dot{background:var(--warn)}
+  .exec.exec-mock{color:var(--warn)} .exec.exec-mock .exec-dot{background:var(--warn)}
   .lempty{font-size:12px;color:var(--muted);line-height:1.5;background:var(--card);
        border:1px solid var(--line);border-radius:var(--r);padding:11px 13px}
   /* privacy list */
@@ -292,6 +300,60 @@
         };
       }
 
+      // #134 — per-resource VERIFICATION PROOFS. inclusionProofDisplay() and
+      // executionProofDisplay() are RESTATED VERBATIM from dig/shields/dig_ledger.mjs
+      // (this embedded page can't import the module); dig_shields.test.mjs extracts
+      // and diffs both copies against the module so they never drift.
+      function isHex64Root(s) {
+        return /^[0-9a-f]{64}$/i.test(String(s || ""));
+      }
+      // INCLUSION proof: the proof root the leaf was Merkle-proven against + the
+      // 'verified against on-chain root' indicator. Honest about rootless reads:
+      // 'latest' / hasRoot:false rather than a fabricated 64-hex root.
+      function inclusionProofDisplay(e) {
+        var entry = e || {};
+        var verified = entry.inclusionProofPassed === true;
+        var root = String(entry.rootHash || "").toLowerCase();
+        var hasRoot = isHex64Root(root);
+        return {
+          verified: verified,
+          proofRoot: hasRoot ? root : "latest",
+          hasRoot: hasRoot,
+          storeId: String(entry.storeId || "").toLowerCase(),
+          errorCode: verified ? "" : String(entry.errorCode || ""),
+          label: verified
+            ? "Inclusion proof verified against on-chain root"
+            : "Inclusion proof failed",
+        };
+      }
+      // EXECUTION proof status — HONEST about the rpc.dig.net mock-proof gap: ONLY
+      // a real terminal receipt is shown as verified; a mock is its own
+      // non-verified state; absent/unknown (the loader's default today) reads
+      // 'not provided'. A mock receipt is NEVER green-checked. Restated VERBATIM
+      // from dig_ledger.mjs — self-contained so the test can extract it alone.
+      function executionProofDisplay(e) {
+        var entry = e || {};
+        var status = String((entry && entry.executionProofStatus) || "").toLowerCase();
+        if (status === "succeeded" || status === "verified") {
+          return { verified: true, state: "verified", status: status,
+            label: "Execution proof: verified" };
+        }
+        if (status === "mock") {
+          return { verified: false, state: "mock", status: status,
+            label: "Execution proof: mock (not a real attestation)" };
+        }
+        if (status === "running" || status === "queued" || status === "request_via_control_plane") {
+          return { verified: false, state: "pending", status: status,
+            label: "Execution proof: requested — not yet available" };
+        }
+        if (status === "failed" || status === "not_found") {
+          return { verified: false, state: "absent", status: status,
+            label: "Execution proof: not provided" };
+        }
+        return { verified: false, state: "unknown", status: status || "none",
+          label: "Execution proof: not provided" };
+      }
+
       var ledger = document.getElementById('ledger');
       var ledgerEmpty = document.getElementById('ledgerEmpty');
       var ledgerPassedSec = document.getElementById('ledgerPassedSec');
@@ -316,23 +378,62 @@
         mk.innerHTML = pass ? '&#10003;' : '&times;';
         row.appendChild(mk);
 
+        // The two per-resource verification proofs (#134), computed by the
+        // shared pure helpers so the row is honest by construction.
+        var inc = inclusionProofDisplay(e);
+        var exec = executionProofDisplay(e);
+
         var lg = document.createElement('div'); lg.className = 'lg';
         var p = document.createElement('div'); p.className = 'path';
         p.setAttribute('data-testid', 'shields-ledger-path');
         p.textContent = e.resourcePath || 'index.html';
         lg.appendChild(p);
+        // INCLUSION verdict — the plain 'verified against on-chain root' indicator
+        // by default (the root hex itself stays behind the disclosure below).
         var v = document.createElement('div'); v.className = 'verdict';
-        v.textContent = pass ? 'Inclusion proof verified'
-          : 'Inclusion proof failed' + (e.errorCode ? ' — see detail' : '');
+        v.textContent = pass ? inc.label
+          : inc.label + (e.errorCode ? ' — see detail' : '');
         lg.appendChild(v);
 
-        // Disclosure: proof root + the failure code. Behind a button so the
-        // default view stays plain.
+        // EXECUTION-proof status — surfaced per resource, HONESTLY. Today the
+        // loader fetches inclusion only (dig.getContent), so this reads
+        // 'not provided' for every resource; a mock receipt is NEVER green-checked.
+        var ex = document.createElement('div');
+        ex.className = 'exec exec-' + exec.state;
+        ex.setAttribute('data-testid', 'shields-ledger-exec');
+        ex.setAttribute('data-dig-exec-proof', exec.state);
+        var exDot = document.createElement('span');
+        exDot.className = 'exec-dot'; exDot.setAttribute('aria-hidden', 'true');
+        ex.appendChild(exDot);
+        var exTxt = document.createElement('span');
+        exTxt.textContent = exec.label;
+        ex.appendChild(exTxt);
+        lg.appendChild(ex);
+
+        // Disclosure: the proof ROOT this resource leaf was Merkle-proven against
+        // + (on failure) the catalogued DIG_ERR_* code. Behind a button so the
+        // default view stays plain. Honest about rootless reads (shows 'latest').
         var detail = document.createElement('div');
         detail.className = 'ldetail'; detail.hidden = true;
         detail.setAttribute('data-testid', 'shields-ledger-detail');
-        var rootHex = e.rootHash || docEl.getAttribute('data-dig-capsule').split(':')[1] || 'latest';
-        var html = '<div><span class="k">capsule root</span> ' + esc(rootHex) + '</div>';
+        detail.setAttribute('data-dig-proof-root', inc.proofRoot);
+        var rootLabel = inc.hasRoot
+          ? 'proven against on-chain root'
+          : 'verified against resolved tip (latest)';
+        var html = '<div data-testid="shields-ledger-proof-root"><span class="k">' +
+          rootLabel + '</span> ' + esc(inc.proofRoot) + '</div>';
+        // Spell out the execution-proof status in the detail too, with WHY it's
+        // 'not provided' — so the honesty is explained, not just asserted.
+        html += '<div><span class="k">execution proof</span> ' + esc(exec.label) + '</div>';
+        if (exec.state === 'unknown' || exec.state === 'absent') {
+          html += '<div class="ldetail-why">No execution receipt was returned for this read. ' +
+            'The browser verifies the inclusion proof on every read; execution proofs ' +
+            '(risc0 receipts attesting a node served honestly over time) are produced ' +
+            'asynchronously via the hub control plane and are not fetched here.</div>';
+        } else if (exec.state === 'mock') {
+          html += '<div class="ldetail-why">This is a mock receipt, not a real ' +
+            'attestation — it is shown as such and never treated as verified.</div>';
+        }
         if (!pass && e.errorCode) {
           detail.setAttribute('data-dig-error', e.errorCode);
           html += '<div data-testid="shields-ledger-error-code"><span class="k">error</span> ' + esc(e.errorCode) + '</div>';

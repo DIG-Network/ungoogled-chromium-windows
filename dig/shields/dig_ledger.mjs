@@ -9,6 +9,17 @@
 // renders: a per-capsule accumulator keyed by `storeId:rootHash`, and the
 // pass/fail grouping the page lists under "Verified (N)" / "Failed (M)".
 //
+// #134 (the browser half) adds the per-resource VERIFICATION PROOFS to that
+// ledger — two pure display models the page restates verbatim:
+//   - inclusionProofDisplay() — surfaces the proof ROOT the resource leaf was
+//     Merkle-proven against + a 'verified against on-chain root' indicator;
+//   - executionProofDisplay() — the risc0 execution-proof status from the
+//     serving node, kept brutally HONEST: a mock/absent/pending proof is NEVER
+//     shown as verified (the live rpc.dig.net path returns MOCK proofs today —
+//     PROTOCOL_GAPS.md HIGH — and the in-process dig-node fetches inclusion
+//     only, so today every resource honestly reads "execution proof: not
+//     provided").
+//
 // The native loader (chrome/browser/dig/dig_url_loader_factory.cc, the
 // DigURLLoader fetch→verify→decrypt path) keeps the EQUIVALENT browser-side
 // accumulator in C++ (a process-global LedgerStore keyed by capsule), recording
@@ -177,4 +188,101 @@ export function groupLedger(entries) {
     empty: total === 0,
     allPassed: total > 0 && failed.length === 0,
   };
+}
+
+/**
+ * Is `s` a 64-hex capsule/proof root (the form a resolved rootHash takes)? A
+ * rootless / "latest" read is NOT — so the display can be honest that no pinned
+ * root was shown rather than printing a fabricated hex string. Restated verbatim
+ * in dig_shields.html; dig_shields.test.mjs guards the two copies against drift.
+ *
+ * @param {string} s candidate root.
+ * @returns {boolean} true iff `s` is exactly 64 hex chars.
+ */
+export function isHex64Root(s) {
+  return /^[0-9a-f]{64}$/i.test(String(s || ""));
+}
+
+/**
+ * The INCLUSION-PROOF detail for one resource (#134, the browser half). Surfaces
+ * the proof ROOT (the capsule root the resource leaf was Merkle-proven against)
+ * and a single 'verified against on-chain root' indicator. Progressive
+ * disclosure lives in the page (✓ by default, the root/path on expand); this is
+ * the pure model behind it.
+ *
+ * Fail-closed: `verified` is true ONLY when the loader's per-resource verdict was
+ * a positive pass (`inclusionProofPassed === true`). A passing entry without a
+ * pinned 64-hex root still verified (against the resolved tip), but we mark
+ * `hasRoot === false` and surface "latest" rather than print a root we don't
+ * have. The verdict is the loader's — this never re-verifies.
+ *
+ * @param {object} e a ledger entry ({inclusionProofPassed, rootHash, storeId, errorCode}).
+ * @returns {{verified:boolean, proofRoot:string, hasRoot:boolean,
+ *   storeId:string, errorCode:string, label:string}}
+ */
+export function inclusionProofDisplay(e) {
+  const entry = e || {};
+  const verified = entry.inclusionProofPassed === true;
+  const root = String(entry.rootHash || "").toLowerCase();
+  const hasRoot = isHex64Root(root);
+  return {
+    verified,
+    // Show the concrete pinned root when we have one; otherwise be honest that
+    // only the resolved tip ("latest") was used — never a fabricated hex string.
+    proofRoot: hasRoot ? root : "latest",
+    hasRoot,
+    storeId: String(entry.storeId || "").toLowerCase(),
+    errorCode: verified ? "" : String(entry.errorCode || ""),
+    label: verified
+      ? "Inclusion proof verified against on-chain root"
+      : "Inclusion proof failed",
+  };
+}
+
+/**
+ * The EXECUTION-PROOF status for one served resource (#134, the browser half) —
+ * the risc0 execution receipt from the SERVER that served the content over RPC
+ * (dig.getProof / dig.getProofStatus `execution_proof_status`).
+ *
+ * HONESTY (the load-bearing rule): the live rpc.dig.net read path returns MOCK
+ * execution proofs today (a known protocol gap), and the in-process dig-node the
+ * browser uses only implements dig.getContent (inclusion only) — so the loader
+ * has NO real execution proof. This NEVER reports a mock/absent/pending proof as
+ * verified. `verified` is true for exactly one state: a real terminal receipt.
+ * The default (no status provided) is the honest "not provided / unknown".
+ *
+ * @param {object} e a ledger entry; reads `executionProofStatus` (the raw
+ *   dig.getProof status string), `executionProof` (the receipt, if any).
+ * @returns {{verified:boolean, state:("verified"|"mock"|"pending"|"absent"|"unknown"),
+ *   status:string, label:string}}
+ */
+export function executionProofDisplay(e) {
+  const entry = e || {};
+  const status = String((entry && entry.executionProofStatus) || "").toLowerCase();
+  // The honest mapping. The CRITICAL rule (PROTOCOL_GAPS.md HIGH: rpc.dig.net
+  // returns MOCK execution proofs today): ONLY a real terminal receipt is shown
+  // as verified; "mock" is its OWN non-verified state so the UI can never
+  // green-check a forged receipt. Sets are inlined so this function is fully
+  // self-contained (the page restates it verbatim and the test extracts it alone).
+  if (status === "succeeded" || status === "verified") {
+    return { verified: true, state: "verified", status,
+      label: "Execution proof: verified" };
+  }
+  // A mock is its OWN state — surfaced honestly, NEVER as verified.
+  if (status === "mock") {
+    return { verified: false, state: "mock", status,
+      label: "Execution proof: mock (not a real attestation)" };
+  }
+  if (status === "running" || status === "queued" || status === "request_via_control_plane") {
+    return { verified: false, state: "pending", status,
+      label: "Execution proof: requested — not yet available" };
+  }
+  if (status === "failed" || status === "not_found") {
+    return { verified: false, state: "absent", status,
+      label: "Execution proof: not provided" };
+  }
+  // No status at all: the honest default. The loader does not fetch execution
+  // proofs yet, so this is what every resource currently shows.
+  return { verified: false, state: "unknown", status: status || "none",
+    label: "Execution proof: not provided" };
 }
