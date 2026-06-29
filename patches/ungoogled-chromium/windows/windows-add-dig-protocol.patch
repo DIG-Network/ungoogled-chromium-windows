@@ -152,15 +152,6 @@
  #include "url/third_party/mozilla/url_parse.h"
  #include "url/url_file.h"
  #include "url/url_util.h"
-@@ -578,7 +579,7 @@
-   std::string scheme(SegmentURLInternal(&trimmed, &parts));
- 
-   // For view-source: URLs, we strip "view-source:", do fixup, and stick it back
--  // on.  This allows us to handle things like "view-source:9oo91e.qjz9zk".
-+  // on.  This allows us to handle things like "view-source:google.com".
-   if (scheme == kViewSourceScheme) {
-     // Reject "view-source:view-source:..." to avoid deep recursion.
-     std::string view_source(kViewSourceScheme + std::string(":"));
 @@ -595,6 +596,38 @@
      return GURL();
    }
