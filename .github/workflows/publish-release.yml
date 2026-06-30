@@ -99,10 +99,14 @@ jobs:
           TARGET_SHA: ${{ steps.context.outputs.target_sha }}
         with:
           script: |
+            // x64 (Windows 64-bit) is REQUIRED — it is what the dig-installer resolves first and the
+            // primary target. x86 + arm are OPTIONAL: a flaky/slow 32-bit or ARM64 Windows Chromium
+            // build must NOT block publishing the x64 installer. We attach whichever arches succeeded;
+            // a missing optional arch is simply absent from the release until its next green build.
             const workflows = [
-              { key: 'x64', file: 'build-x64.yml' },
-              { key: 'x86', file: 'build-x86.yml' },
-              { key: 'arm', file: 'build-arm.yml' },
+              { key: 'x64', file: 'build-x64.yml', required: true },
+              { key: 'x86', file: 'build-x86.yml', required: false },
+              { key: 'arm', file: 'build-arm.yml', required: false },
             ];
             const targetSha = process.env.TARGET_SHA;
             const outputs = { publishable: 'true' };
@@ -133,8 +137,12 @@ jobs:
               matches.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
               const latest = matches[0];
               if (!latest) {
-                core.info(`No successful run found for ${workflow.file} at ${targetSha}`);
-                outputs.publishable = 'false';
+                if (workflow.required) {
+                  core.info(`No successful REQUIRED run for ${workflow.file} at ${targetSha} — not publishable`);
+                  outputs.publishable = 'false';
+                } else {
+                  core.info(`No successful run for optional ${workflow.file} at ${targetSha} — skipping that arch`);
+                }
                 continue;
               }
 
@@ -160,7 +168,12 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-release-context.outputs.x64_run_id }}
 
+      # x86/arm are OPTIONAL — only download when that arch actually had a successful build, and never
+      # fail the publish if it didn't (the x64 installer must still ship). The release attaches
+      # whichever arches are present.
       - name: Download x86 package
+        if: ${{ needs.resolve-release-context.outputs.x86_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: chromium-x86
@@ -170,6 +183,8 @@ jobs:
           run-id: ${{ needs.resolve-release-context.outputs.x86_run_id }}
 
       - name: Download arm package
+        if: ${{ needs.resolve-release-context.outputs.arm_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: chromium-arm
