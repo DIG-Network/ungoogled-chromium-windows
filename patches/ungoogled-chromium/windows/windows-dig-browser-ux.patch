@@ -307,7 +307,7 @@
 +CLOSE
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -116,15 +116,18 @@
+@@ -116,9 +116,12 @@
    registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  
@@ -322,19 +322,7 @@
                                  pref_registration_flags);
    registry->RegisterBooleanPref(prefs::kSplitViewDragAndDropEnabled, true,
                                  pref_registration_flags);
- 
-   registry->RegisterBooleanPref(prefs::kShowForwardButton, true,
-                                 pref_registration_flags);
-   registry->RegisterInt64Pref(prefs::kBookmarkBarHoverCount, 0);
-   registry->RegisterInt64Pref(prefs::kBookmarkBarNavigationCount, 0);
-   registry->RegisterBooleanPref(prefs::kPinContextualTaskButton, true,
-@@ -137,26 +140,27 @@
-   registry->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu, true);
-   registry->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar, true);
-   registry->RegisterBooleanPref(
--      translate::prefs::kOfferTranslateEnabled, true,
-+      translate::prefs::kOfferTranslateEnabled, false,
-       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+@@ -142,8 +145,9 @@
    registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
    registry->RegisterDictionaryPref(prefs::kBrowserWindowPlacementPopup);
    registry->RegisterDictionaryPref(prefs::kAppWindowPlacement);
@@ -345,21 +333,6 @@
        user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
  #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
    registry->RegisterBooleanPref(prefs::kPrintPreviewUseSystemDefaultPrinter,
-                                 false);
- #endif
-   registry->RegisterStringPref(prefs::kWebRTCIPHandlingPolicy,
--                               blink::kWebRTCIPHandlingDefault);
-+                               blink::kWebRTCIPHandlingDisableNonProxiedUdp);
-   registry->RegisterListPref(prefs::kWebRTCIPHandlingUrl, base::ListValue());
-   registry->RegisterBooleanPref(prefs::kWebRTCPostQuantumKeyAgreement, false);
-   registry->RegisterStringPref(prefs::kWebRTCUDPPortRange, std::string());
-   registry->RegisterBooleanPref(prefs::kWebRtcEventLogCollectionAllowed, false);
-   registry->RegisterListPref(prefs::kWebRtcLocalIpsAllowedUrls);
--  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, true);
-+  registry->RegisterBooleanPref(prefs::kWebRtcTextLogCollectionAllowed, false);
-   registry->RegisterListPref(
-       prefs::kWebRTCDiagnosticLogCollectionAllowedForOrigins,
-       base::ListValue());
 @@ -215,8 +219,10 @@
                                  false);
  #endif
@@ -451,42 +424,6 @@
  #include "chrome/browser/device_api/managed_configuration_service.h"
  #include "chrome/browser/devtools/features.h"
  #include "chrome/browser/download/chrome_download_manager_delegate.h"
-@@ -307,7 +308,6 @@
- #include "components/safe_browsing/core/browser/url_checker_delegate.h"
- #include "components/safe_browsing/core/common/features.h"
- #include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
--#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
- #include "components/search_engines/search_engines_switches.h"
- #include "components/search_engines/template_url_service.h"
- #include "components/security_state/core/security_state.h"
-@@ -342,6 +342,7 @@
- #include "content/public/browser/internal_webui_config.h"
- #include "content/public/browser/isolated_web_apps_policy.h"
- #include "content/public/browser/legacy_tech_cookie_issue_details.h"
-+#include "content/public/browser/navigation_entry.h"
- #include "content/public/browser/navigation_handle.h"
- #include "content/public/browser/network_service_instance.h"
- #include "content/public/browser/overlay_window.h"
-@@ -850,11 +851,19 @@
- 
-   // Don't change the URL when incognito mode.
-   if (profile->IsOffTheRecord()) {
-+   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
-+   if (!base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
-     return false;
-   }
- 
-   std::string ntp_location =
-       profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
-+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
-+    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
-+  if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
-+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("custom-ntp"))
-+    ntp_location = base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII("custom-ntp");
-+  if (profile->IsOffTheRecord() && ntp_location.find("chrome://") != std::string::npos) return false;
-   if (ntp_location.empty()) {
-     return false;
-   }
 @@ -868,6 +877,29 @@
    return true;
  }
@@ -517,15 +454,6 @@
  #if !BUILDFLAG(IS_ANDROID)
  bool IsFileOrDirectoryPickerWithoutGestureAllowed(
      content::WebContents* contents) {
-@@ -1534,7 +1566,7 @@
- void ChromeContentBrowserClient::RegisterProfilePrefs(
-     user_prefs::PrefRegistrySyncable* registry) {
-   registry->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
--  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, true);
-+  registry->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, false);
-   // Register user prefs for mapping SitePerProcess and IsolateOrigins in
-   // user policy in addition to the same named ones in Local State (which are
-   // used for mapping the command-line flags).
 @@ -2809,24 +2841,6 @@
      command_line->AppendSwitchASCII(switches::kMetricsClientID,
                                      client_info->client_id);
@@ -616,7 +544,7 @@
  #include "third_party/blink/public/web/web_security_policy.h"
  #include "third_party/blink/public/web/web_view.h"
  #include "third_party/libwebp/src/src/webp/decode.h"
-@@ -76,9 +81,13 @@
+@@ -76,6 +81,11 @@
  #include "ui/gfx/codec/webp_codec.h"
  #include "ui/gfx/geometry/size_f.h"
  #include "url/gurl.h"
@@ -627,48 +555,8 @@
 +#include "chrome/renderer/dig_provider_js.inc"
  
  #if !BUILDFLAG(IS_ANDROID)
--#include "chrome/renderer/accessibility/read_anything/read_anything_app_controller.h"
  #include "chrome/renderer/searchbox/searchbox_extension.h"
- #endif  // !BUILDFLAG(IS_ANDROID)
- 
-@@ -272,14 +281,16 @@
-   if (frame->Parent() || frame->IsInFencedFrameTree())
-     return;
- 
--  GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
--  if (!osdd_url.is_empty()) {
--    mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
--        osdd_handler;
--    render_frame()->GetBrowserInterfaceBroker().GetInterface(
--        osdd_handler.BindNewPipeAndPassReceiver());
--    osdd_handler->PageHasOpenSearchDescriptionDocument(
--        frame->GetDocument().Url(), osdd_url);
-+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("disable-search-engine-collection")) {
-+    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
-+    if (!osdd_url.is_empty()) {
-+      mojo::Remote<chrome::mojom::OpenSearchDescriptionDocumentHandler>
-+          osdd_handler;
-+      render_frame()->GetBrowserInterfaceBroker().GetInterface(
-+          osdd_handler.BindNewPipeAndPassReceiver());
-+      osdd_handler->PageHasOpenSearchDescriptionDocument(
-+          frame->GetDocument().Url(), osdd_url);
-+    }
-   }
- }
- 
-@@ -341,18 +352,43 @@
-     SearchBoxExtension::Install(render_frame()->GetWebFrame());
-   }
- 
--  // Install ReadAnythingAppController on render frames with the Read Anything
--  // url, which is chrome-untrusted. ReadAnythingAppController installs v8
--  // bindings in the chrome.readingMode namespace which are consumed by
--  // read_anything/app.ts, the resource of the Read Anything WebUI.
--  if (render_frame()->GetWebFrame()->GetDocument().Url() ==
--      chrome::kChromeUIUntrustedReadAnythingSidePanelURL) {
--    ReadAnythingAppController::Install(render_frame());
--  }
- #endif  // !BUILDFLAG(IS_ANDROID)
+@@ -346,6 +356,39 @@
  #if BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    guest_view::SlimWebViewBindings::MaybeInstall(*render_frame());
  #endif  // BUILDFLAG(ENABLE_GUEST_VIEW) && !BUILDFLAG(ENABLE_EXTENSIONS_CORE)

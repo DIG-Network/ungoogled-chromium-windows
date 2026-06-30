@@ -52,15 +52,7 @@
 +};
 --- a/chrome/common/BUILD.gn
 +++ b/chrome/common/BUILD.gn
-@@ -530,6 +530,7 @@
-     "//components/optimization_guide/optimization_guide_internals/webui:url_constants",
-     "//components/password_manager/content/common",
-     "//components/safe_browsing/core/common",
-+    "//components/supervised_user/core/common:buildflags",
-     "//device/vr/buildflags",
-   ]
- 
-@@ -667,6 +668,7 @@
+@@ -668,6 +668,7 @@
    sources = [
      "actor.mojom",
      "chrome_render_frame.mojom",
@@ -174,16 +166,7 @@
 +}  // namespace dig
 --- a/chrome/browser/chrome_browser_interface_binders.cc
 +++ b/chrome/browser/chrome_browser_interface_binders.cc
-@@ -85,8 +85,6 @@
- 
- #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-     BUILDFLAG(IS_CHROMEOS)
--#include "chrome/browser/screen_ai/screen_ai_service_router.h"
--#include "chrome/browser/screen_ai/screen_ai_service_router_factory.h"
- #include "chrome/browser/web_applications/sub_apps_service_impl.h"
- #endif
- 
-@@ -100,6 +98,7 @@
+@@ -98,6 +98,7 @@
  #include "third_party/blink/public/mojom/installedapp/installed_app_provider.mojom.h"
  #else
  #include "chrome/browser/badging/badge_manager.h"
@@ -191,35 +174,7 @@
  #include "chrome/browser/payments/payment_request_factory.h"
  #include "chrome/browser/prefs/persistent_renderer_prefs_manager.h"
  #include "chrome/browser/ui/views/side_panel/customize_chrome/customize_chrome_utils.h"
-@@ -373,27 +372,6 @@
- }
- #endif  // BUILDFLAG(IS_WIN)
- 
--#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
--    BUILDFLAG(IS_WIN)
--void BindScreenAIAnnotator(
--    content::RenderFrameHost* frame_host,
--    mojo::PendingReceiver<screen_ai::mojom::ScreenAIAnnotator> receiver) {
--  content::BrowserContext* browser_context =
--      frame_host->GetProcess()->GetBrowserContext();
--
--  screen_ai::ScreenAIServiceRouterFactory::GetForBrowserContext(browser_context)
--      ->BindScreenAIAnnotator(std::move(receiver));
--}
--
--void BindScreen2xMainContentExtractor(
--    content::RenderFrameHost* frame_host,
--    mojo::PendingReceiver<screen_ai::mojom::Screen2xMainContentExtractor>
--        receiver) {
--  screen_ai::ScreenAIServiceRouterFactory::GetForBrowserContext(
--      frame_host->GetProcess()->GetBrowserContext())
--      ->BindMainContentExtractor(std::move(receiver));
--}
--#endif
- 
- void BindModelBroker(
-     content::RenderFrameHost* frame_host,
-@@ -502,6 +480,8 @@
+@@ -479,6 +480,8 @@
  #else
    map->Add<blink::mojom::BadgeService>(
        &badging::BadgeManager::BindFrameReceiverIfAllowed);
@@ -228,17 +183,6 @@
    map->Add<blink::mojom::PersistentRendererPrefsService>(
        &PersistentRendererPrefsManager::BindFrameReceiver);
    if (base::FeatureList::IsEnabled(features::kWebPayments)) {
-@@ -558,10 +538,6 @@
-         &web_app::SubAppsServiceImpl::CreateIfAllowed);
-   }
- 
--  map->Add<screen_ai::mojom::ScreenAIAnnotator>(&BindScreenAIAnnotator);
--
--  map->Add<screen_ai::mojom::Screen2xMainContentExtractor>(
--      &BindScreen2xMainContentExtractor);
- #endif
- 
- #if BUILDFLAG(IS_WIN)
 --- /dev/null
 +++ b/chrome/renderer/dig/dig_wallet_bridge.h
 @@ -0,0 +1,79 @@
@@ -476,40 +420,6 @@
      "google_accounts_private_api_extension.cc",
      "google_accounts_private_api_extension.h",
      "google_accounts_private_api_util.cc",
-@@ -349,8 +351,6 @@
-     ]
-   } else {
-     sources += [
--      "accessibility/ax_tree_distiller.cc",
--      "accessibility/ax_tree_distiller.h",
-       "accessibility/phrase_segmentation/base_phrase_segmenter.cc",
-       "accessibility/phrase_segmentation/base_phrase_segmenter.h",
-       "accessibility/phrase_segmentation/dependency_parser_model.cc",
-@@ -367,16 +367,6 @@
-       "accessibility/phrase_segmentation/tokenized_sentence.h",
-       "accessibility/phrase_segmentation/tokenizer.cc",
-       "accessibility/phrase_segmentation/tokenizer.h",
--      "accessibility/read_anything/read_aloud_app_model.cc",
--      "accessibility/read_anything/read_aloud_app_model.h",
--      "accessibility/read_anything/read_aloud_traversal_utils.cc",
--      "accessibility/read_anything/read_aloud_traversal_utils.h",
--      "accessibility/read_anything/read_anything_app_controller.cc",
--      "accessibility/read_anything/read_anything_app_controller.h",
--      "accessibility/read_anything/read_anything_app_model.cc",
--      "accessibility/read_anything/read_anything_app_model.h",
--      "accessibility/read_anything/read_anything_node_utils.cc",
--      "accessibility/read_anything/read_anything_node_utils.h",
-       "media/chrome_speech_recognition_client.cc",
-       "media/chrome_speech_recognition_client.h",
-       "searchbox/searchbox.cc",
-@@ -392,7 +382,6 @@
-       "//components/record_replay/content/renderer",
-       "//components/trusted_vault",
-       "//services/screen_ai/buildflags",
--      "//services/screen_ai/public/mojom",
-       "//services/strings",
-       "//third_party/re2",
-       "//third_party/tensorflow-text",
 --- a/chrome/renderer/chrome_render_frame_observer.h
 +++ b/chrome/renderer/chrome_render_frame_observer.h
 @@ -30,6 +30,10 @@
