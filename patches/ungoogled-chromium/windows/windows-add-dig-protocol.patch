@@ -41,12 +41,12 @@
        url.SchemeIs(chrome::kChromeSearchScheme) ||
 --- a/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
 +++ b/chrome/browser/ui/navigator/browser_navigator_params_utils.cc
-@@ -153,7 +153,10 @@
+@@ -153,7 +153,9 @@
      // RewriteURLIfNecessary removes the "view-source:" scheme which could lead
      // to incorrect matching, so ensure that the target and the candidate are
      // either both view-source:, or neither is.
--    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source) {
-+    if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
+     if (tab_url.SchemeIs(content::kViewSourceScheme) != target_is_view_source ||
+-        tab_url.SchemeIs(url::kTraceScheme)) {
 +        tab_url.SchemeIs(url::kTraceScheme) ||
 +        tab_url.SchemeIs(url::kDigScheme) ||
 +        tab_url.SchemeIs(url::kChiaScheme)) {
