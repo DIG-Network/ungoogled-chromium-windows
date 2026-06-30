@@ -1,0 +1,284 @@
+# DIG Browser: the CONTROL PANE toolbar button + the dig://control full page.
+#
+# A dedicated toolbar button (the DIG control mark, dig_control.icon) sits next
+# to the wallet + shields buttons. UNLIKE the wallet/shields buttons (which DOCK
+# in Chromium's Side Panel), the Control Pane button NAVIGATES THE ACTIVE TAB to
+# a FULL PAGE at dig://control — a normal top-level navigation (WindowOpenDisposition::
+# CURRENT_TAB), the way dig://home/about/welcome are full pages. It is the
+# browser-as-CONTROLLER surface: it manages the user's local dig-node.
+#
+# dig://control IS the node-controller surface. To stay DRY and never let two
+# copies of the (large) controller page drift, the dig loader serves the SAME
+# embedded controller page (kDigNodeHtml, with the loopback control token
+# injected) for BOTH the dig://node host (the legacy, omnibox-only entry) and the
+# new dig://control host — so the Control Pane is exactly the proven My Node
+# controller, reachable from a first-class toolbar button. The page itself does
+# the honest branch: if a LOCAL dig-node answers at dig.local/localhost it shows
+# the management UI driven by the control.* admin RPCs; if none answers it shows
+# the install landing nudging the user to download a dig-node. Browsing is never
+# gated on a node — chia:// reads transparently fall back to rpc.dig.net; only the
+# management UI requires a local node. (The pure page-posture policy + a no-drift
+# guard live in dig/control/dig_control.mjs + dig_control.test.mjs.)
+#
+# The button class (DigControlButton) mirrors DigShieldsButton (windows-dig-
+# shields.patch) but is stripped of all side-panel/SidePanelUI code: its press
+# handler does a single CURRENT_TAB Navigate(GURL("dig://control")). It is
+# registered into the toolbar right after the shields button. The dig_control.icon
+# is registered in chrome/app/vector_icons/BUILD.gn (beside dig_shield/dig_wallet,
+# added by windows-dig-browser-ux.patch) and the dig://control host dispatch is a
+# one-line extension of the existing dig://node branch in dig_url_loader_factory.cc
+# (windows-dig-browser-ux.patch). Applies AFTER windows-dig-sidepanel.patch.
+--- a/chrome/app/vector_icons/BUILD.gn
++++ b/chrome/app/vector_icons/BUILD.gn
+@@ -74,6 +74,7 @@
+     "developer_tools.icon",
+     "devices.icon",
+     "devices_chrome_refresh.icon",
++    "dig_control.icon",
+     "dig_shield.icon",
+     "dig_wallet.icon",
+     "dock_to_left.icon",
+--- /dev/null
++++ b/chrome/app/vector_icons/dig_control.icon
+@@ -0,0 +1,44 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// DIG Browser: the toolbar CONTROL PANE button. Three horizontal "control"
++// sliders (the universal settings/controls mark) — so the button reads as
++// "controls / manage your node" at the toolbar size as a single monochrome
++// silhouette tinted by the active toolbar theme color. Drawn on the standard
++// 20dp toolbar canvas (matches dig_wallet.icon / dig_shield.icon).
++//
++// FILL_RULE_NONZERO. Each control is a horizontal track (a thin rounded bar)
++// with a round knob sitting on it; the three knobs are offset along their tracks
++// (left, right, left) the way an equalizer / settings panel reads. Tracks are
++// drawn as filled rounded rectangles; knobs as filled circles approximated by
++// cubic arcs.
++
++CANVAS_DIMENSIONS, 20,
++FILL_RULE_NONZERO,
++
++// --- Track 1 (top), y=5: a thin rounded bar spanning the canvas width. ---
++ROUND_RECT, 3, 4, 14, 2, 1,
++// Knob on track 1, offset LEFT, centered ~ (7,5), r=2.4 (cubic-arc circle).
++MOVE_TO, 7, 2.6,
++CUBIC_TO, 8.33, 2.6, 9.4, 3.67, 9.4, 5,
++CUBIC_TO, 9.4, 6.33, 8.33, 7.4, 7, 7.4,
++CUBIC_TO, 5.67, 7.4, 4.6, 6.33, 4.6, 5,
++CUBIC_TO, 4.6, 3.67, 5.67, 2.6, 7, 2.6,
++CLOSE,
++
++// --- Track 2 (middle), y=10. ---
++ROUND_RECT, 3, 9, 14, 2, 1,
++// Knob on track 2, offset RIGHT, centered ~ (13,10), r=2.4.
++MOVE_TO, 13, 7.6,
++CUBIC_TO, 14.33, 7.6, 15.4, 8.67, 15.4, 10,
++CUBIC_TO, 15.4, 11.33, 14.33, 12.4, 13, 12.4,
++CUBIC_TO, 11.67, 12.4, 10.6, 11.33, 10.6, 10,
++CUBIC_TO, 10.6, 8.67, 11.67, 7.6, 13, 7.6,
++CLOSE,
++
++// --- Track 3 (bottom), y=15. ---
++ROUND_RECT, 3, 14, 14, 2, 1,
++// Knob on track 3, offset LEFT, centered ~ (7,15), r=2.4.
++MOVE_TO, 7, 12.6,
++CUBIC_TO, 8.33, 12.6, 9.4, 13.67, 9.4, 15,
++CUBIC_TO, 9.4, 16.33, 8.33, 17.4, 7, 17.4,
++CUBIC_TO, 5.67, 17.4, 4.6, 16.33, 4.6, 15,
++CUBIC_TO, 4.6, 13.67, 5.67, 12.6, 7, 12.6,
++CLOSE
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -18,6 +18,7 @@
+     "chrome_labs/chrome_labs_coordinator.h",
+     "chrome_labs/chrome_labs_item_view.h",
+     "chrome_labs/chrome_labs_view_controller.h",
++    "dig_control_button.h",
+     "dig_shields_button.h",
+     "home_button.h",
+     "overflow_button.h",
+@@ -112,6 +113,7 @@
+     "chrome_labs/chrome_labs_coordinator.cc",
+     "chrome_labs/chrome_labs_item_view.cc",
+     "chrome_labs/chrome_labs_view_controller.cc",
++    "dig_control_button.cc",
+     "dig_shields_button.cc",
+     "home_button.cc",
+     "overflow_button.cc",
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/dig_control_button.h
+@@ -0,0 +1,46 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_DIG_CONTROL_BUTTON_H_
++#define CHROME_BROWSER_UI_VIEWS_TOOLBAR_DIG_CONTROL_BUTTON_H_
++
++#include "base/memory/raw_ptr.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
++
++class BrowserWindowInterface;
++class Profile;
++
++namespace ui {
++class Event;
++}  // namespace ui
++
++namespace dig {
++
++// DIG Browser: the CONTROL PANE toolbar button. It carries the DIG control mark
++// and sits next to the wallet + shields buttons. UNLIKE those two (which DOCK
++// their panels in Chromium's Side Panel), pressing this button NAVIGATES THE
++// ACTIVE TAB to the full-page Control Pane at dig://control — a normal top-level
++// navigation, the way dig://home / dig://about are full pages.
++//
++// dig://control is the browser-as-CONTROLLER surface: it serves the My Node
++// controller page (the same embedded page as dig://node), which detects a local
++// dig-node and shows either the management UI (driven by the control.* admin
++// RPCs) or an install landing. The button itself holds no node logic — it just
++// opens the page; the page does the honest detect-and-branch. Reads are never
++// gated on a node (chia:// falls back to rpc.dig.net); only management is.
++class DigControlButton : public ToolbarButton {
++  METADATA_HEADER(DigControlButton, ToolbarButton)
++
++ public:
++  explicit DigControlButton(BrowserWindowInterface* browser_window_interface);
++  DigControlButton(const DigControlButton&) = delete;
++  DigControlButton& operator=(const DigControlButton&) = delete;
++  ~DigControlButton() override;
++
++ private:
++  // Navigates the active tab to the full-page Control Pane (dig://control).
++  void OpenControlPane(const ui::Event& event);
++
++  raw_ptr<Profile> profile_;
++};
++
++}  // namespace dig
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_DIG_CONTROL_BUTTON_H_
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/dig_control_button.cc
+@@ -0,0 +1,66 @@
++// Copyright 2026 The DIG Network Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/toolbar/dig_control_button.h"
++
++#include "base/functional/bind.h"
++#include "chrome/app/vector_icons/vector_icons.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition.h"
++#include "ui/events/event.h"
++#include "ui/events/event_constants.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "url/gurl.h"
++
++namespace dig {
++
++DigControlButton::DigControlButton(
++    BrowserWindowInterface* browser_window_interface)
++    : ToolbarButton(base::BindRepeating(&DigControlButton::OpenControlPane,
++                                        base::Unretained(this))),
++      profile_(browser_window_interface->GetProfile()) {
++  // The DIG control mark — three equalizer-style control sliders. A standard
++  // monochrome toolbar vector icon, so SetVectorIcons lets ToolbarButton tint
++  // it with the active toolbar theme color and size it like every other toolbar
++  // button (back, forward, reload, the wallet + shields buttons).
++  SetVectorIcons(kDigControlIcon, kDigControlIcon);
++  // Plain control: this button opens a full page, so (unlike wallet/shields)
++  // there are no dock/pop-out modifiers to surface.
++  SetTooltipText(u"DIG Control Pane\nManage your local DIG node");
++  GetViewAccessibility().SetName(std::u16string(u"DIG Control Pane"));
++  SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
++                           ui::EF_MIDDLE_MOUSE_BUTTON);
++  SizeToPreferredSize();
++}
++
++DigControlButton::~DigControlButton() = default;
++
++void DigControlButton::OpenControlPane(const ui::Event& event) {
++  if (!profile_) {
++    return;
++  }
++  // FULL-PAGE navigation: open the Control Pane (dig://control) in the active
++  // tab, the way dig://home / dig://about are full pages. NOT a side panel and
++  // NOT a free-floating window — a normal top-level tab navigation. A
++  // middle-click (or ctrl/cmd-click) opens it in a new foreground tab instead,
++  // matching standard toolbar-button behavior.
++  WindowOpenDisposition disposition = WindowOpenDisposition::CURRENT_TAB;
++  if (event.flags() & ui::EF_MIDDLE_MOUSE_BUTTON) {
++    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++  } else if (event.flags() & (ui::EF_CONTROL_DOWN | ui::EF_COMMAND_DOWN)) {
++    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++  }
++  NavigateParams params(profile_.get(), GURL("dig://control"),
++                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++  params.disposition = disposition;
++  Navigate(&params);
++}
++
++BEGIN_METADATA(DigControlButton)
++END_METADATA
++
++}  // namespace dig
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -96,6 +96,7 @@
+ #include "chrome/browser/ui/views/toolbar/back_forward_button.h"
+ #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
+ #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
++#include "chrome/browser/ui/views/toolbar/dig_control_button.h"
+ #include "chrome/browser/ui/views/toolbar/dig_shields_button.h"
+ #include "chrome/browser/ui/views/toolbar/home_button.h"
+ #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
+@@ -441,6 +442,11 @@
+   // (dig://shields) with the active tab's dig:// status + the browser's
+   // privacy posture.
+   dig_shields_ = AddChildView(std::make_unique<dig::DigShieldsButton>(browser_));
++
++  // DIG Browser: the Control Pane button, next to the wallet + shields buttons.
++  // Unlike those (which dock a side panel), this NAVIGATES THE ACTIVE TAB to the
++  // full-page Control Pane (dig://control) for managing the user's local node.
++  dig_control_ = AddChildView(std::make_unique<dig::DigControlButton>(browser_));
+
+   if (!features::IsWebUISplitTabsButtonEnabled()) {
+     split_tabs_ =
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.h
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
+@@ -383,6 +383,10 @@
+   // plain View to avoid leaking the concrete type into this header; the button
+   // is constructed in toolbar_view.cc.
+   raw_ptr<views::View> dig_shields_ = nullptr;
++  // DIG Browser: the Control Pane toolbar button. Held as a plain View to avoid
++  // leaking the concrete type into this header; the button is constructed in
++  // toolbar_view.cc and navigates the active tab to the full page dig://control.
++  raw_ptr<views::View> dig_control_ = nullptr;
+   raw_ptr<SplitTabsToolbarButton> split_tabs_ = nullptr;
+   raw_ptr<CustomTabBarView> custom_tab_bar_ = nullptr;
+   raw_ptr<LocationBarView> location_bar_view_ = nullptr;
+--- a/chrome/browser/dig/dig_url_loader_factory.cc
++++ b/chrome/browser/dig/dig_url_loader_factory.cc
+@@ -822,7 +822,12 @@
+     // control-token — a renderer page can't read the filesystem) into the page's
+     // {{DIG_CONTROL_TOKEN}} placeholder, like {{VERSION}} for dig://about. The
+     // read is blocking file IO → do it on a MayBlock thread, then serve.
+-    if (is_internal && url.host() == "node") {
++    //
++    // dig://control is the SAME controller surface, reached from the dedicated
++    // Control Pane toolbar button (a full-page navigation, next to wallet +
++    // shields). It serves the identical embedded page so the two never drift —
++    // the Control Pane IS the My Node controller, just with a first-class button.
++    if (is_internal && (url.host() == "node" || url.host() == "control")) {
+       base::ThreadPool::PostTaskAndReplyWithResult(
+           FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+           base::BindOnce(&ReadControlToken),

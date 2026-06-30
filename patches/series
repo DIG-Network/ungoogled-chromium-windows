@@ -35,3 +35,4 @@ ungoogled-chromium/windows/windows-dig-search-default.patch
 ungoogled-chromium/windows/windows-dig-shields.patch
 ungoogled-chromium/windows/windows-dig-offline.patch
 ungoogled-chromium/windows/windows-dig-sidepanel.patch
+ungoogled-chromium/windows/windows-dig-control.patch
