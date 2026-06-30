@@ -1386,14 +1386,14 @@
 +// Windows / $HOME/DigNode elsewhere — the same location dig-node resolves.
 +base::FilePath DigNodeConfigDir() {
 +  std::unique_ptr<base::Environment> env = base::Environment::Create();
-+  std::string override_dir;
-+  if (env->GetVar("DIG_NODE_CONFIG_DIR", &override_dir) && !override_dir.empty()) {
-+    return base::FilePath::FromUTF8Unsafe(override_dir);
++  std::optional<std::string> override_dir = env->GetVar("DIG_NODE_CONFIG_DIR");
++  if (override_dir && !override_dir->empty()) {
++    return base::FilePath::FromUTF8Unsafe(*override_dir);
 +  }
 +#if BUILDFLAG(IS_WIN)
-+  std::string local_app_data;
-+  if (env->GetVar("LOCALAPPDATA", &local_app_data) && !local_app_data.empty()) {
-+    return base::FilePath::FromUTF8Unsafe(local_app_data).AppendASCII("DigNode");
++  std::optional<std::string> local_app_data = env->GetVar("LOCALAPPDATA");
++  if (local_app_data && !local_app_data->empty()) {
++    return base::FilePath::FromUTF8Unsafe(*local_app_data).AppendASCII("DigNode");
 +  }
 +  base::FilePath dir;
 +  if (base::PathService::Get(base::DIR_LOCAL_APP_DATA, &dir)) {
@@ -1401,9 +1401,9 @@
 +  }
 +  return base::FilePath();
 +#else
-+  std::string home;
-+  if (env->GetVar("HOME", &home) && !home.empty()) {
-+    return base::FilePath::FromUTF8Unsafe(home).AppendASCII("DigNode");
++  std::optional<std::string> home = env->GetVar("HOME");
++  if (home && !home->empty()) {
++    return base::FilePath::FromUTF8Unsafe(*home).AppendASCII("DigNode");
 +  }
 +  return base::FilePath();
 +#endif
@@ -1703,7 +1703,7 @@
 +                      size_t index,
 +                      std::string request_json,
 +                      NodeResponseCallback on_response,
-+                      std::unique_ptr<std::string> body) {
++                      std::optional<std::string> body) {
 +    bool reachable = body && IsHealthyDigNode(*body);
 +    PutProbeVerdict(base_url, reachable);
 +    if (reachable) {
@@ -1748,7 +1748,7 @@
 +                           size_t index,
 +                           std::string request_json,
 +                           NodeResponseCallback on_response,
-+                           std::unique_ptr<std::string> body) {
++                           std::optional<std::string> body) {
 +    if (body && !body->empty()) {
 +      std::move(on_response).Run(std::move(*body));
 +      return;
